@@ -1,0 +1,51 @@
+# ============================
+# 🧱 Base Project Ignored Files
+# ============================
+
+# OS & Editor clutter
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.swp
+
+# ============================
+# ⚙️ Node & Package Managers
+# ============================
+tournament-manager/node_modules/
+tournament-manager/package-lock.json
+tournament-manager/pnpm-lock.yaml
+tournament-manager/yarn.lock
+tournament-manager/.npmrc
+
+# ============================
+# 🧪 Build Artifacts
+# ============================
+tournament-manager/.next/
+tournament-manager/out/
+tournament-manager/dist/
+tournament-manager/.turbo/
+
+# ============================
+# 🔒 Environment Variables
+# ============================
+tournament-manager/.env
+tournament-manager/.env.local
+tournament-manager/.env.development.local
+tournament-manager/.env.test.local
+tournament-manager/.env.production.local
+
+# ============================
+# 🧰 TypeScript / Misc Cache
+# ============================
+tournament-manager/*.tsbuildinfo
+tournament-manager/.eslintcache
+tournament-manager/.stylelintcache
+
+# ============================
+# 🧹 Miscellaneous
+# ============================
+tournament-manager/public/tmp/
+tournament-manager/tmp/
+tournament-manager/.vercel/
