@@ -41,11 +41,17 @@ const authSetup = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     async jwt({ token, user }) {
-      if (user) (token as any).emailVerified = (user as any).emailVerified ?? true;
+      if (user) {
+        (token as any).id = user.id;
+        (token as any).emailVerified = (user as any).emailVerified ?? true;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) (session.user as any).emailVerified = (token as any).emailVerified ?? true;
+      if (session.user) {
+        (session.user as any).id = (token as any).id;
+        (session.user as any).emailVerified = (token as any).emailVerified ?? true;
+      }
       return session;
     },
   },
