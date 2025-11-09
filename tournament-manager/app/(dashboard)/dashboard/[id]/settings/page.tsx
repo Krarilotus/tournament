@@ -1,5 +1,6 @@
 "use client";
 
+// 1. import all the shadn components....
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,7 +9,6 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { updateTournamentSchema } from '@/lib/validators';
 import { Button } from '@/components/ui/button';
-// ... (all other shadcn/ui imports) ...
 import {
   Form,
   FormControl,
@@ -31,8 +31,6 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { X, Loader2, ArrowLeft } from 'lucide-react';
 import React, { useEffect, useState, use } from 'react';
-
-// --- 1. FIX THE IMPORT PATH ---
 import { TieBreakerDnd } from '../../components/TieBreakerDnd'; 
 
 // 2. Export the form type (this is correct)
@@ -53,13 +51,10 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
       pointsDraw: 0,
       pointsLoss: 0,
       customStats: [],
-      // --- 3. FIX THE DEFAULT VALUE ---
-      // Must now match our new schema (array of objects)
       tieBreakers: [], 
     },
   });
 
-  // This is still correct
   const customStats = form.watch('customStats');
 
   useEffect(() => {
@@ -118,8 +113,6 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
   
   const onSubmit: SubmitHandler<UpdateTournamentForm> = async (values) => {
     try {
-      // --- 5. FIX THE DATA SAVE ---
-      // We must "flatten" the tieBreakers array before sending to the API
       const payload = {
         name: values.name,
         description: values.description,
@@ -128,11 +121,9 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
           pointsDraw: values.pointsDraw,
           pointsLoss: values.pointsLoss,
           customStats: values.customStats,
-          // Convert array of objects back to array of strings for the DB
           tieBreakers: values.tieBreakers ? values.tieBreakers.map(t => t.value) : [],
         }
       };
-      // --- END OF FIX ---
 
       const res = await fetch(`/api/tournaments/${params.id}`, {
         method: 'PUT',
@@ -172,7 +163,7 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
           
-          {/* ... (Basic Info Card - no change) ... */}
+          {/* ... (Basic Info Card) ... */}
           <Card>
             <CardHeader><CardTitle>Basic Information</CardTitle></CardHeader>
             <CardContent className="space-y-6">
@@ -201,7 +192,7 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
             </CardContent>
           </Card>
 
-          {/* ... (Scoring Card - no change) ... */}
+          {/* ... (Scoring Card) ... */}
           <Card>
             <CardHeader><CardTitle>Scoring System</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-3 gap-4">
@@ -259,7 +250,7 @@ export default function TournamentSettingsPage(props: { params: Promise<{ id: st
             </CardContent>
           </Card>
           
-          {/* ... (Custom Stats Card - no change) ... */}
+          {/* ... (Custom Stats Card) ... */}
           <Card>
             <CardHeader>
               <CardTitle>Custom Statistics</CardTitle>

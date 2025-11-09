@@ -42,7 +42,6 @@ function handleError(error: any) {
 }
 
 // --- CORRECT CONTEXT TYPE ---
-// The `params` property itself is a Promise.
 type Context = {
   params: Promise<{ id: string }>
 };
@@ -70,11 +69,11 @@ export async function GET(request: NextRequest, context: Context) {
         pointsLoss: tournament.settings.pointSystem.get('loss') || 0,
         customStats: tournament.settings.customStats || [],
         tieBreakers: tournament.settings.tieBreakers || [],
-      }
+        participantsLayout: tournament.settings.participantsLayout || null,
+      },
     };
     
     return NextResponse.json(flatTournamentData);
-    // --- END OF FIX ---
 
   } catch (error: any) {
     return handleError(error);
@@ -84,10 +83,8 @@ export async function GET(request: NextRequest, context: Context) {
 // --- PUT (Update) a tournament ---
 export async function PUT(request: NextRequest, context: Context) {
   try {
-    // --- THIS IS THE FIX ---
     const params = await context.params;
     const id = params.id;
-    // --- END OF FIX ---
     
     console.log(`[PUT] /api/tournaments/${id}`);
 
@@ -103,16 +100,21 @@ export async function PUT(request: NextRequest, context: Context) {
     if (body.description) tournament.description = body.description;
 
     if (body.settings) {
-       if (body.settings.pointsWin !== undefined) {
-        tournament.settings.pointSystem.set('win', body.settings.pointsWin);
-        tournament.settings.pointSystem.set('draw', body.settings.pointsDraw);
-        tournament.settings.pointSystem.set('loss', body.settings.pointsLoss);
+      const s = body.settings;
+    
+      if (s.pointsWin !== undefined) {
+        tournament.settings.pointSystem.set("win", s.pointsWin);
+        tournament.settings.pointSystem.set("draw", s.pointsDraw);
+        tournament.settings.pointSystem.set("loss", s.pointsLoss);
       }
-      if (body.settings.customStats) {
-        tournament.settings.customStats = body.settings.customStats;
+      if (s.customStats !== undefined) {
+        tournament.settings.customStats = s.customStats;
       }
-      if (body.settings.tieBreakers) {
-        tournament.settings.tieBreakers = body.settings.tieBreakers;
+      if (s.tieBreakers !== undefined) {
+        tournament.settings.tieBreakers = s.tieBreakers;
+      }
+      if (s.participantsLayout !== undefined) {
+        tournament.settings.participantsLayout = s.participantsLayout;
       }
     }
     

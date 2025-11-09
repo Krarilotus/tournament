@@ -1,7 +1,8 @@
 import mongoose, { Schema, Document, models, Model } from 'mongoose';
 
-export interface IParticipant extends Document {
-  tournamentId: mongoose.Schema.Types.ObjectId;
+// This is the Mongoose Document interface.
+export interface IParticipant extends Document<mongoose.Types.ObjectId> {
+  tournamentId: mongoose.Types.ObjectId;
   name: string;
   customId?: string;
   isActive: boolean;
@@ -14,8 +15,27 @@ export interface IParticipant extends Document {
     buchholz2: number;
     [key: string]: any; // For dynamic custom stats
   };
-  matchHistory: mongoose.Schema.Types.ObjectId[];
+  matchHistory: mongoose.Types.ObjectId[];
 }
+
+// This is a simple type for data serialized for the client.
+export type SerializedParticipant = {
+  _id: string;
+  tournamentId: string;
+  name: string;
+  customId?: string;
+  isActive: boolean;
+  scores: {
+    points: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    buchholz: number;
+    buchholz2: number;
+    [key: string]: any;
+  };
+  matchHistory: string[];
+};
 
 const participantSchema = new Schema<IParticipant>({
   tournamentId: { type: Schema.Types.ObjectId, ref: 'Tournament', required: true },
