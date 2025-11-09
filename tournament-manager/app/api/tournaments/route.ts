@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     pointSystem.set('win', pointsWin);
     pointSystem.set('draw', pointsDraw);
     pointSystem.set('loss', pointsLoss);
+    const tieBreakersForDB = tieBreakers.map(t => t.value);
 
     // Create the new tournament document
     const newTournament = new Tournament({
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       settings: {
         pointSystem,
         customStats,
-        tieBreakers,
+        tieBreakers: tieBreakersForDB,
       },
       status: 'draft', // Default status
     });
