@@ -323,9 +323,9 @@ export function CustomPairingsSection({
         </div>
       </div>
 
-      {/* --- MODIFIED: Scroll container for bench + matches --- */}
-      <div className="relative max-h-[45dvh] overflow-y-auto rounded-md border p-3 space-y-3">
+      <div className="relative rounded-md border p-3 space-y-3">
         {/* bench (sticky) */}
+        {/* This will now be sticky to the dialog's scrollable pane */}
         <div className="sticky top-0 space-y-1 bg-background z-10 -mt-3 -mx-3 p-3 border-b mb-3">
           <Label>Unassigned players</Label>
           {isLoading && (
@@ -365,7 +365,7 @@ export function CustomPairingsSection({
           )}
         </div>
 
-        {/* matches grid (will scroll) */}
+        {/* matches grid (will scroll as part of the parent) */}
         <div className="space-y-3">
           {matches.map((m, idx) => (
             <div
@@ -421,7 +421,6 @@ export function CustomPairingsSection({
           )}
         </div>
       </div>
-      {/* --- END MODIFIED SECTION --- */}
     </div>
   );
 }

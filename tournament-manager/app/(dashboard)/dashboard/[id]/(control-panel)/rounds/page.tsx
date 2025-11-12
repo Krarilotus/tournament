@@ -17,13 +17,15 @@ import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { GenerateRoundDialog } from "./_components/GenerateRoundDialog";
-import { MatchResultForm } from "./_components/MatchResultForm";
+// --- MODIFIED: Importing the new component ---
+import { MatchCard } from "./_components/MatchCard";
+// --- END MODIFIED ---
 import { CurrentStandingsCard } from "./_components/CurrentStandingsCard";
 import { DeleteRoundButton } from "./_components/DeleteRoundButton";
 
 import type { PopulatedRound, SerializedMatch } from "@/lib/types";
 import type { SerializedParticipant } from "@/lib/models/Participant";
-import { makeTeamLookupKey } from "@/lib/utils"; // <-- 1. IMPORT THE HELPER
+import { makeTeamLookupKey } from "@/lib/utils";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -39,145 +41,6 @@ type SerializedTeam = {
   customName?: string;
   genericName?: string;
 };
-
-// ---- helper for participant names ----
-
-function getParticipantName(p: any): string {
-  if (typeof p.participantId === "object" && p.participantId?.name) {
-    return p.participantId.name as string;
-  }
-  const id =
-    typeof p.participantId === "string"
-      ? p.participantId
-      : p.participantId?._id?.toString() ?? "";
-  return id ? `ID: ${id.slice(-4)}` : "Unknown";
-}
-
-// --- ADDED: Helper to get a string ID from a populated or unpopulated participant ---
-function getParticipantId(p: any): string {
-  if (typeof p.participantId === "string") {
-    return p.participantId;
-  }
-  if (typeof p.participantId === "object" && p.participantId?._id) {
-    return (p.participantId as SerializedPlayer)._id;
-  }
-  return "";
-}
-
-// ---- Match card ----------------------------------------------------
-
-function MatchCard({
-  match,
-  customStats,
-  teamNameMap, // <-- 2. ACCEPT THE LIVE NAME MAP
-  onResultChanged,
-}: {
-  match: SerializedMatch;
-  customStats: string[];
-  teamNameMap: Map<string, string>; // <-- 2. ACCEPT THE LIVE NAME MAP
-  onResultChanged: () => void;
-}) {
-  const participants = match.participants as any[];
-  const hasTeams = participants.some((p) => p.team);
-
-  const teamAPlayers = hasTeams
-    ? participants.filter((p) => (p.team ?? "").toUpperCase() === "A")
-    : [];
-  const teamBPlayers = hasTeams
-    ? participants.filter((p) => (p.team ?? "").toUpperCase() === "B")
-    : [];
-
-  const [showPlayers, setShowPlayers] = React.useState(false);
-
-  const isCompleted = match.status === "completed";
-
-  // --- 3. MODIFIED: Use live names from the map ---
-  const teamNames: Record<string, string> =
-    (match as any).teamNames || {};
-
-  // Get live name for Team A
-  const teamAPlayerIds = teamAPlayers.map(getParticipantId);
-  const lookupKeyA = makeTeamLookupKey(teamAPlayerIds);
-  const teamADisplay =
-    teamNameMap.get(lookupKeyA) || teamNames.A || "Team A";
-
-  // Get live name for Team B
-  const teamBPlayerIds = teamBPlayers.map(getParticipantId);
-  const lookupKeyB = makeTeamLookupKey(teamBPlayerIds);
-  const teamBDisplay =
-    teamNameMap.get(lookupKeyB) || teamNames.B || "Team B";
-  // --- END MODIFICATION ---
-
-  const title = hasTeams
-    ? `${teamADisplay} vs ${teamBDisplay}`
-    : (match.participants as any[])
-        .map((p: any) => getParticipantName(p))
-        .join(" vs ");
-
-  return (
-    <div className="flex flex-col gap-1 rounded-md border bg-card/40 px-3 py-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{title}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Status:{" "}
-            <span
-              className={
-                isCompleted
-                  ? "text-emerald-400 font-medium"
-                  : "text-yellow-400"
-              }
-            >
-              {isCompleted ? "completed" : "set results"}
-            </span>
-          </p>
-        </div>
-        <MatchResultForm
-          match={match}
-          customStats={customStats}
-          onResultReported={onResultChanged}
-        />
-      </div>
-
-      {hasTeams && (
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <button
-            type="button"
-            className="underline-offset-2 hover:underline"
-            onClick={() => setShowPlayers((prev) => !prev)}
-          >
-            {showPlayers ? "Hide players" : "Show players"}
-          </button>
-        </div>
-      )}
-
-      {hasTeams && showPlayers && (
-        <div className="mt-1 grid gap-4 border-t pt-2 text-xs md:grid-cols-2">
-          <div>
-            <p className="mb-1 font-semibold">{teamADisplay}</p>
-            <ul className="space-y-0.5">
-              {teamAPlayers.map((p: any) => (
-                <li key={getParticipantName(p)} className="truncate">
-                  {getParticipantName(p)}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <p className="mb-1 font-semibold">{teamBDisplay}</p>
-            <ul className="space-y-0.5">
-              {teamBPlayers.map((p: any) => (
-                <li key={getParticipantName(p)} className="truncate">
-                  {getParticipantName(p)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ---- main page -----------------------------------------------------
 
@@ -213,13 +76,13 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
     fetcher
   );
 
-  // --- 4. ADDED: Fetch all persistent teams ---
+  // --- Fetch all persistent teams ---
   const { data: allTeams } = useSWR<SerializedTeam[]>(
     `/api/tournaments/${tournamentId}/teams`,
     fetcher
   );
 
-  // --- 5. ADDED: Create the live team name map ---
+  // --- Create the live team name map ---
   const liveTeamNameMap = React.useMemo(() => {
     const map = new Map<string, string>();
     if (allTeams) {
@@ -246,10 +109,7 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
       ? (tournament.settings.tieBreakers as string[])
       : ["points"];
 
-  // nudge team-standings SWR on result change
   const [standingsVersion, setStandingsVersion] = React.useState(0);
-
-  // per-round collapse state
   const [collapsedRounds, setCollapsedRounds] = React.useState<
     Record<string, boolean>
   >({});
@@ -365,7 +225,7 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
                           key={match._id}
                           match={match}
                           customStats={customStats}
-                          teamNameMap={liveTeamNameMap} // <-- 6. PASS THE MAP
+                          teamNameMap={liveTeamNameMap}
                           onResultChanged={refreshAll}
                         />
                       ))}

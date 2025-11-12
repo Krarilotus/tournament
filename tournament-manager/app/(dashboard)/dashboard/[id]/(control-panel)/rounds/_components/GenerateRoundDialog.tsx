@@ -23,7 +23,7 @@ import {
 import { SwissOptionsSection, SwissVariant } from "./SwissOptionsSection";
 import { FfaOptionsSection, GroupMethod } from "./FfaOptionsSection";
 import { TeamOptionsSection } from "./TeamOptionsSection";
-import { CustomPairingsSection } from "./CustomPairingsSection"; 
+import { CustomPairingsSection } from "./CustomPairingsSection";
 
 // --- types ----------------------------------------------------------
 
@@ -175,7 +175,7 @@ export function GenerateRoundDialog({
 
     try {
       // CUSTOM MODE: just send the seeds we built
-      if (system === "custom") {                            // <<< CUSTOM
+      if (system === "custom") {
         if (customSeeds.length === 0) {
           setError("You have not created any matches.");
           setIsSubmitting(false);
@@ -309,112 +309,122 @@ export function GenerateRoundDialog({
       <DialogTrigger asChild>
         <Button size="sm">Generate Next Round</Button>
       </DialogTrigger>
-      <DialogContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <DialogHeader>
+      {/* --- MODIFIED: Fixed height and wider dialog --- */}
+      <DialogContent className="sm:max-w-2xl h-[80dvh] flex flex-col">
+        {/* --- MODIFIED: Form layout for scrolling content --- */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col flex-1 overflow-hidden"
+        >
+          <DialogHeader className="px-6 pt-6">
             <DialogTitle>Generate Next Round</DialogTitle>
             <DialogDescription>
               Choose the matchmaking system and round-specific options.
             </DialogDescription>
           </DialogHeader>
 
-          {/* System selection */}
-          <div className="space-y-2">
-            <Label htmlFor="system">Matchmaking System</Label>
-            <Select
-              value={system}
-              onValueChange={(value: System) => setSystem(value)}
-            >
-              <SelectTrigger id="system">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="swiss-1v1">Swiss (1v1)</SelectItem>
-                <SelectItem value="n-ffa">Free-For-All (N-Player)</SelectItem>
-                <SelectItem value="team-2v2">Team vs Team (2v2+)</SelectItem>
-                <SelectItem value="custom">Custom / Manual seeding</SelectItem> {/* <<< CUSTOM */}
-              </SelectContent>
-            </Select>
+          {/* --- MODIFIED: This div becomes the scrollable part --- */}
+          <div className="flex-1 overflow-y-auto space-y-4 p-6">
+            {/* System selection */}
+            <div className="space-y-2">
+              <Label htmlFor="system">Matchmaking System</Label>
+              <Select
+                value={system}
+                onValueChange={(value: System) => setSystem(value)}
+              >
+                <SelectTrigger id="system">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="swiss-1v1">Swiss (1v1)</SelectItem>
+                  <SelectItem value="n-ffa">Free-For-All (N-Player)</SelectItem>
+                  <SelectItem value="team-2v2">Team vs Team (2v2+)</SelectItem>
+                  <SelectItem value="custom">Custom / Manual seeding</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Swiss options for swiss & team */}
+            {(system === "swiss-1v1" || system === "team-2v2") && (
+              <SwissOptionsSection
+                swissVariant={swissVariant}
+                onSwissVariantChange={setSwissVariant}
+                byePoints={byePoints}
+                onByePointsChange={setByePoints}
+                avoidRematches={avoidRematches}
+                onAvoidRematchesChange={setAvoidRematches}
+                rounds={rounds}
+                selectedRoundIds={selectedRoundIds}
+                isLoadingRounds={isLoadingRounds}
+                onToggleRoundSelection={toggleRoundSelection}
+              />
+            )}
+
+            {/* FFA options */}
+            {system === "n-ffa" && (
+              <FfaOptionsSection
+                groupSize={groupSize}
+                onGroupSizeChange={handleGroupSizeChange}
+                groupMethod={groupMethod}
+                onGroupMethodChange={setGroupMethod}
+                placementsByPlace={ffaPlacementsByPlace}
+                onPlacementsChange={(place, points) =>
+                  setFfaPlacementsByPlace((prev) => ({
+                    ...prev,
+                    [place]: points,
+                  }))
+                }
+                byePoints={byePoints}
+                onByePointsChange={setByePoints}
+                avoidRematches={avoidRematches}
+                onAvoidRematchesChange={setAvoidRematches}
+                rounds={rounds}
+                selectedRoundIds={selectedRoundIds}
+                isLoadingRounds={isLoadingRounds}
+                onToggleRoundSelection={toggleRoundSelection}
+              />
+            )}
+
+            {/* Team options */}
+            {system === "team-2v2" && (
+              <TeamOptionsSection
+                teamSize={teamSize}
+                onTeamSizeChange={setTeamSize}
+                teamMethod={teamMethod}
+                onTeamMethodChange={setTeamMethod}
+                teamPersistenceMode={teamPersistenceMode}
+                onTeamPersistenceModeChange={setTeamPersistenceMode}
+                teamPersistenceRoundId={teamPersistenceRoundId}
+                onTeamPersistenceRoundIdChange={setTeamPersistenceRoundId}
+                rounds={rounds}
+                isLoadingRounds={isLoadingRounds}
+              />
+            )}
+
+            {/* Custom/manual pairing UI */}
+            {system === "custom" && (
+              <CustomPairingsSection
+                tournamentId={tournamentId}
+                byePoints={byePoints}
+                onSeedsChange={setCustomSeeds}
+              />
+            )}
           </div>
-
-          {/* Swiss options for swiss & team */}
-          {(system === "swiss-1v1" || system === "team-2v2") && (
-            <SwissOptionsSection
-              swissVariant={swissVariant}
-              onSwissVariantChange={setSwissVariant}
-              byePoints={byePoints}
-              onByePointsChange={setByePoints}
-              avoidRematches={avoidRematches}
-              onAvoidRematchesChange={setAvoidRematches}
-              rounds={rounds}
-              selectedRoundIds={selectedRoundIds}
-              isLoadingRounds={isLoadingRounds}
-              onToggleRoundSelection={toggleRoundSelection}
-            />
-          )}
-
-          {/* FFA options */}
-          {system === "n-ffa" && (
-            <FfaOptionsSection
-              groupSize={groupSize}
-              onGroupSizeChange={handleGroupSizeChange}
-              groupMethod={groupMethod}
-              onGroupMethodChange={setGroupMethod}
-              placementsByPlace={ffaPlacementsByPlace}
-              onPlacementsChange={(place, points) =>
-                setFfaPlacementsByPlace((prev) => ({
-                  ...prev,
-                  [place]: points,
-                }))
-              }
-              byePoints={byePoints}
-              onByePointsChange={setByePoints}
-              avoidRematches={avoidRematches}
-              onAvoidRematchesChange={setAvoidRematches}
-              rounds={rounds}
-              selectedRoundIds={selectedRoundIds}
-              isLoadingRounds={isLoadingRounds}
-              onToggleRoundSelection={toggleRoundSelection}
-            />
-          )}
-
-          {/* Team options */}
-          {system === "team-2v2" && (
-            <TeamOptionsSection
-              teamSize={teamSize}
-              onTeamSizeChange={setTeamSize}
-              teamMethod={teamMethod}
-              onTeamMethodChange={setTeamMethod}
-              teamPersistenceMode={teamPersistenceMode}
-              onTeamPersistenceModeChange={setTeamPersistenceMode}
-              teamPersistenceRoundId={teamPersistenceRoundId}
-              onTeamPersistenceRoundIdChange={setTeamPersistenceRoundId}
-              rounds={rounds}
-              isLoadingRounds={isLoadingRounds}
-            />
-          )}
-
-          {/* Custom/manual pairing UI */} {/* <<< CUSTOM */}
-          {system === "custom" && (
-            <CustomPairingsSection
-              tournamentId={tournamentId}
-              byePoints={byePoints}
-              onSeedsChange={setCustomSeeds}
-            />
-          )}
+          {/* --- END Scrollable div --- */}
 
           {error && (
-            <p className="text-sm text-red-500" role="alert">
+            <p className="text-sm text-red-500 px-6" role="alert">
               {error}
             </p>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="px-6 pb-6 pt-4 border-t">
             <Button type="submit" disabled={isSubmitting} className="ml-auto">
               {isSubmitting ? "Generating..." : "Generate"}
             </Button>
           </DialogFooter>
         </form>
+        {/* --- END Form --- */}
       </DialogContent>
     </Dialog>
   );

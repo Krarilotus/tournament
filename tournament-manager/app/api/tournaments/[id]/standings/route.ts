@@ -56,14 +56,7 @@ export async function GET(
 
     const tieBreakers: string[] = tournament.settings.tieBreakers || ["points"];
     const customStats: string[] = tournament.settings.customStats || [];
-    
-    console.log(
-      "[Standings API] tieBreakers:",
-      tieBreakers,
-      "| customStats:",
-      customStats
-    );
-    
+
     // 3. Validate tie-breakers against built-ins + customStats
     for (const tb of tieBreakers) {
       if (BUILTIN_TIEBREAKERS.has(tb)) continue;
