@@ -279,7 +279,7 @@ The system is ready to proceed to **Phase 5: Matchmaking**.
 
 Before beginning, we will expand our scope to include not only **Swiss 1v1** matchmaking but also **N-player Free-For-All (N-FFA)** and **2v2 team** formats. The matchmaking and scoring systems are tightly coupled; thus, both should be planned together as a unified logic phase.
 
-This combined **Phase 5–6 planning stage** will define:
+This combined **Phase 5-6 planning stage** will define:
 - Core matchmaking algorithms (Swiss, N-FFA, and 2v2).  
 - Scoring and tie-breaker logic (points, Buchholz, and custom stats).  
 - Round generation and dynamic format switching.  

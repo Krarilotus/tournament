@@ -49,12 +49,8 @@ interface ParticipantsTableProps {
   onLayoutChange?: (layout: ParticipantsLayout) => void;
 }
 
-// Human-friendly header label for a stat key like "points" or "custom_Kills"
+// Human-friendly header label for a stat key like "points" or "Kills"
 function prettyStatLabel(key: string): string {
-  if (key.startsWith("custom_")) {
-    const raw = key.slice("custom_".length);
-    return raw.charAt(0).toUpperCase() + raw.slice(1);
-  }
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
