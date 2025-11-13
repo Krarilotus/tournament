@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useMemo } from "react";
 import useSWR from "swr";
 import {
   Card,
@@ -19,10 +20,10 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type TeamStanding = {
   key: string;
+  name: string;
   playerIds: string[];
   players: { _id: string; name: string; customId?: string; points: number }[];
-  totalPoints: number;
-  averagePoints: number;
+  scores: Record<string, number>;
 };
 
 type Props = {
@@ -39,7 +40,16 @@ function formatScoreKey(key: string): string {
   if (key === "points") return "Points";
   if (key === "buchholz") return "Buchholz";
   if (key === "buchholz2") return "Buchholz-2";
-  return key;
+  // Capitalize first letter for custom stats like "kills"
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+// --- Consistent score formatting ---
+function formatScoreValue(val: number): string | number {
+  if (val % 1 !== 0) {
+    return val.toFixed(2);
+  }
+  return val;
 }
 
 export function CurrentStandingsCard({
@@ -53,20 +63,22 @@ export function CurrentStandingsCard({
   const [showStandings, setShowStandings] = React.useState(true);
   const [mode, setMode] = React.useState<"players" | "teams">("players");
 
-  const teamRounds = rounds.filter((r) => r.system.startsWith("team-"));
+  const teamRounds = useMemo(
+    () => rounds.filter((r) => r.system.startsWith("team-")),
+    [rounds]
+  );
+
   const [teamSeedRoundId, setTeamSeedRoundId] = React.useState<string | null>(
     () => (teamRounds.length > 0 ? teamRounds[0]._id : null)
   );
 
   React.useEffect(() => {
-    // If no team rounds, reset seed
     if (teamRounds.length === 0) {
       setTeamSeedRoundId(null);
     } else if (
-      teamSeedRoundId &&
+      !teamSeedRoundId ||
       !teamRounds.some((r) => r._id === teamSeedRoundId)
     ) {
-      // seed round vanished from list
       setTeamSeedRoundId(teamRounds[0]._id);
     }
   }, [teamRounds, teamSeedRoundId]);
@@ -166,21 +178,13 @@ export function CurrentStandingsCard({
         <CardContent className="pt-0">
           {mode === "players" && (
             <>
-              {/* First load: no data yet */}
-              {standingsLoading && !hasStandings && (
-                <p className="py-2 text-sm text-muted-foreground">
-                  Loading standings...
-                </p>
-              )}
-
-              {/* No data, not loading → empty tournament */}
+              {/* ... loading/empty states ... */}
               {!standingsLoading && !hasStandings && (
                 <p className="py-2 text-sm text-muted-foreground">
                   No standings yet. Generate a round and report some results.
                 </p>
               )}
 
-              {/* Once we have any standings, keep the table mounted forever */}
               {hasStandings && (
                 <>
                   {standingsLoading && (
@@ -225,7 +229,7 @@ export function CurrentStandingsCard({
                                 key={key}
                                 className="py-1 pr-2 text-right text-xs font-medium"
                               >
-                                {p.scores?.[key] ?? 0}
+                                {formatScoreValue(p.scores?.[key] ?? 0)}
                               </td>
                             ))}
                           </tr>
@@ -240,27 +244,7 @@ export function CurrentStandingsCard({
 
           {mode === "teams" && (
             <>
-              {teamRounds.length === 0 && (
-                <p className="py-2 text-sm text-muted-foreground">
-                  No team rounds yet. Generate at least one team round to see
-                  team standings.
-                </p>
-              )}
-
-              {teamRounds.length > 0 && teamStandingsError && (
-                <p className="py-2 text-sm text-red-500">
-                  Failed to load team standings.
-                </p>
-              )}
-
-              {teamRounds.length > 0 &&
-                teamStandingsLoading &&
-                !teamStandingsError && (
-                  <p className="py-2 text-sm text-muted-foreground">
-                    Loading team standings...
-                  </p>
-                )}
-
+              {/* ... loading/empty states ... */}
               {teamRounds.length > 0 &&
                 !teamStandingsLoading &&
                 !teamStandingsError &&
@@ -280,14 +264,17 @@ export function CurrentStandingsCard({
                           <th className="py-1 pr-2 text-left">#</th>
                           <th className="py-1 pr-2 text-left">Team</th>
                           <th className="py-1 pr-2 text-left">Players</th>
-                          <th className="py-1 pr-2 text-right">
-                            Total points
-                          </th>
-                          <th className="py-1 pr-2 text-right">
-                            Avg points
-                          </th>
+                          {scoreColumns.map((key) => (
+                            <th
+                              key={key}
+                              className="whitespace-nowrap py-1 pr-2 text-right"
+                            >
+                              Total {formatScoreKey(key)}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
+                      
                       <tbody>
                         {teamStandings.map((t, idx) => (
                           <tr key={t.key} className="border-b last:border-0">
@@ -295,19 +282,21 @@ export function CurrentStandingsCard({
                               {idx + 1}
                             </td>
                             <td className="py-1 pr-2 text-xs font-semibold">
-                              {`Team ${alphaCode(idx)}`}
+                              {t.name}
                             </td>
                             <td className="py-1 pr-2 text-xs">
                               {t.players
                                 .map((p) => p.name || p._id.slice(-4))
                                 .join(", ")}
                             </td>
-                            <td className="py-1 pr-2 text-right text-xs font-medium">
-                              {t.totalPoints.toFixed(2)}
-                            </td>
-                            <td className="py-1 pr-2 text-right text-xs">
-                              {t.averagePoints.toFixed(2)}
-                            </td>
+                            {scoreColumns.map((key) => (
+                              <td
+                                key={key}
+                                className="py-1 pr-2 text-right text-xs font-medium"
+                              >
+                                {formatScoreValue(t.scores[key] ?? 0)}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>

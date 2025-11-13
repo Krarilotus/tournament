@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+// --- REMOVED: useRouter ---
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -28,12 +29,16 @@ type TournamentMeta = {
 
 export default function ParticipantsPage({ params }: PageProps) {
   const { id } = use(params);
+  // --- REMOVED: router ---
 
   const [participants, setParticipants] = useState<SerializedParticipant[]>([]);
   const [tiebreakers, setTiebreakers] = useState<string[]>([]);
   const [layout, setLayout] = useState<ParticipantsLayout | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
+  // --- REMOVED: redirectStatus state ---
+
+  // --- SIMPLIFIED: Reverted to a standard fetchData callback ---
   const fetchData = useCallback(
     async (opts?: { initial?: boolean }) => {
       if (!id) return;
@@ -86,9 +91,11 @@ export default function ParticipantsPage({ params }: PageProps) {
     [id]
   );
 
+  // --- SIMPLIFIED: Standard useEffect for initial load ---
   useEffect(() => {
     fetchData({ initial: true });
   }, [fetchData]);
+  // --- END MODIFICATION ---
 
   const handleParticipantsChanged = useCallback(() => {
     // silent refresh: no big spinner
@@ -115,8 +122,12 @@ export default function ParticipantsPage({ params }: PageProps) {
     [id]
   );
 
+  // --- SIMPLIFIED: Reverted to simple loading check ---
   const showInitialSpinner =
     isInitialLoading && participants.length === 0;
+  // --- END MODIFICATION ---
+
+  // --- REMOVED: Full page loader for redirecting ---
 
   return (
     <Card>

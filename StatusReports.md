@@ -293,6 +293,187 @@ Once finalized, this logic layer will serve as the computational “engine” of
 
 
 
+# 🚀 Phase 5: Core Logic Engine - Detailed Implementation Report
+
+This report provides a detailed summary of the architectural and feature-level work completed during the "Unified Logic Plan." The original plan was not just implemented but fundamentally re-architected to prioritize modularity, configurability, and long-term "Zero Tech Debt."
+
+## 1. Executive Summary: From API to Engine
+
+The most significant achievement of this phase was the "Zero Tech Debt" pivot from building three simple API routes to designing a **true, modular logic engine** located in `lib/matchmaking/`.
+
+The API routes (`generate-round`, `standings`, etc.) are now correctly implemented as thin "Orchestrators" that validate user input and call this pure, testable engine.
+
+This architectural shift enabled three massive feature upgrades not fully scoped in the original plan:
+
+1.  **Persistent Team Entity (`lib/models/Team.ts`):** We now have a new database collection for `Teams`. This allows users to *name* their teams (e.g., "Blue Squad") and allows us to persist team structures across multiple rounds. This is the foundation for the new "Team Management" page.
+2.  **Per-Round Configurability (`lib/models/Round.ts`):** The `Round` model was upgraded to store the *exact* `systemOptions` (e.g., FFA point-per-place) used to generate it. The Re-Calculation Engine now intelligently reads this per-round config, making it far more flexible.
+3.  **Advanced UI & Custom Pairings:** The `GenerateRoundDialog` was completely rebuilt to expose all new engine configurations (e.g., "Team Method," "Avoid Rematches"). A new "Custom" tab was added, allowing organizers to manually drag-and-drop players into matches, fulfilling a major "flexibility" requirement ahead of schedule.
+
+---
+
+## 2. 🏛️ Architectural & Model Upgrades
+
+The database schema was significantly enhanced to support the new engine.
+
+* **`lib/models/Team.ts` (New Model):**
+    * A new collection that permanently stores a team's members (`playerIds`), `ownerId`, and `tournamentId`.
+    * **Critical Feature:** It includes a `lookupKey` (a sorted, `|`-delimited string of `playerIds`, e.g., "id1|id2|id3"). This key is indexed and used to guarantee team uniqueness and rapidly find existing teams.
+    * Stores `customName` (user-defined) and `genericName` (e.g., "Team A").
+
+* **`lib/models/Round.ts` (Upgraded):**
+    * `systemOptions: Schema.Types.Mixed`: Stores the *exact* configuration object (e.g., `{ groupSize: 4, groupMethod: 'SIMPLE_CHUNK' }`) from `generate-round` for perfect historical accuracy.
+    * `ffaPlacements: Map<string, number>`: A per-round override for FFA scoring (e.g., `"1st": 10, "2nd": 5`).
+    * `pointSystem: Map<string, number>`: A per-round override for standard win/loss/draw points.
+
+* **`lib/models/Match.ts` (Upgraded):**
+    * `teamNames: Map<string, string>`: Stores a snapshot of team names at the time of match creation (e.g., `"A": "Blue Squad", "B": "Red Rebels"`). This ensures match cards don't change if a team is renamed later.
+
+* **`lib/models/Participant.ts` (Upgraded):**
+    * `scores: { type: Schema.Types.Mixed }`: Explicitly set to `Mixed` (and `strict: false`) to ensure Mongoose correctly saves all dynamic custom stat keys (e.g., `scores.Kills: 102`).
+
+---
+
+## 3. ⚙️ Module 5.1: The Re-Calculation Engine (The "Accountant")
+
+The "Accountant" is now significantly more precise and robust, respecting per-round settings.
+
+* **`app/api/tournaments/[id]/recalculate/route.ts`:**
+    * The engine now fetches all `Rounds` into a `Map` during its initial data-gathering pass.
+    * **Upgraded Logic:** When tallying a `Match`, it finds its parent `Round` (via `roundsMap.get(match.roundId)`). It then *prioritizes* scoring based on the `round.ffaPlacements` or `round.pointSystem` *before* falling back to the global `tournament.settings.pointSystem`. This is the core of the new flexibility.
+    * The Buchholz calculation was optimized to use a `Set<string>` of `opponentIds` populated during Pass 2, making Pass 3 (Buchholz-1) and Pass 4 (Buchholz-2) extremely fast.
+
+* **`app/api/matches/[matchId]/report/route.ts`:**
+    * **Critical "Zero Tech Debt" Fix:** The "fire-and-forget" `fetch` to `/recalculate` was **removed and replaced with an `await fetch(...)`**. This prevents a critical race condition where the client's UI would re-fetch standings *before* the recalculation was finished, leading to stale data. The UI now only refreshes *after* the new standings are 100% computed.
+    * The logic was also upgraded to check if *all* matches in a round are `completed`, and if so, it automatically updates the `Round.status` to `completed`.
+
+* **`app/api/tournaments/[id]/rounds/[roundId]/route.ts` (New Endpoint):**
+    * A new `DELETE` endpoint was created to delete a round and all its associated matches.
+    * This endpoint *also* correctly `await`s a full recalculation, ensuring that deleting a round instantly and accurately updates all participant scores.
+
+---
+
+## 4. 📊 Module 5.2: The Standings Engine (The "Sorter")
+
+This module was successfully refactored and expanded to support both players and teams.
+
+* **`lib/standings/getStandings.ts` (New Module):**
+    * The core sorting logic was extracted from the API route and placed in this pure, reusable function. The API at `app/api/.../standings/route.ts` is now a thin, secure wrapper that authenticates the user and calls this module.
+
+* **`app/api/.../team-standings/route.ts` (New Endpoint):**
+    * A new, dedicated endpoint to power the "Team Standings" view.
+    * It accepts a `seedRoundId` query param.
+    * It calls the `reconstructTeamsFromMatches` helper to identify all teams that played in that round.
+    * It fetches the *current* `Participant` documents for all members of those teams.
+    * It calculates aggregate scores (`totalPoints`, `averagePoints`) for each team.
+    * It returns a fully sorted list of these team entities.
+
+---
+
+## 5. 🚀 Module 5.3: The Matchmaking Engine (The "Pairer")
+
+This is the largest and most significant upgrade. The simple API route was replaced with a fully modular, configurable, and pure logic engine.
+
+* **`lib/validators.ts` (Upgraded):**
+    * The `generateRoundBodySchema` was completely rewritten as a `discriminatedUnion` to be the "single source of truth."
+    * It now contains comprehensive, nested option schemas for `swiss1v1`, `n-ffa`, `team-2v2`, and the new `custom` system.
+    * All `.default()` calls were correctly removed from the schema and moved into the UI's `useState` and `onValueChange` handlers, fixing all `react-hook-form` / `zod` type conflicts.
+
+* **`app/api/.../generate-round/route.ts` (The "Orchestrator"):**
+    * This route's only job is to orchestrate.
+    * 1. It validates the complex `generateRoundBodySchema`.
+    * 2. It fetches all necessary context: `standings` (from `getStandings`), `allMatches`, and `allRounds`.
+    * 3. It passes this single, large context object to the central `buildNextRound` function.
+
+* **`lib/matchmaking/buildRound.ts` (The "Central Hub"):**
+    * This new module is the "brain" of the engine.
+    * It contains the main `switch (config.system)` statement.
+    * It correctly dispatches to specialized, testable functions (`buildSwiss1v1Round`, `buildNffaRound`, `buildTeamRound`).
+    * It correctly handles the `system: "custom"` case by passing the client-generated `config.matchSeeds` straight through.
+    * It is responsible for creating/finding `Team` documents and attaching `teamNames` to match seeds.
+
+* **`lib/matchmaking/core/` (The "Pure Engine"):**
+    * **`swiss.ts`:** Contains the pure pairing logic. `pairSwiss` is a generic function that can pair *any* `SwissEntity`. `buildOpponentMap` is the core, reusable function for "Avoid Rematches" logic. `pairSwissFideDutch` correctly implements the high-low pairing within score brackets.
+    * **`teamBuilding.ts`:** A pure "team factory." `buildNewTeams` handles the `BALANCE_FIRST_LAST` and `RANDOM` methods. `reconstructTeamsFromMatches` is a powerful helper that can rebuild team compositions from any past round, powering both the `team-standings` API and the "Team Persistence" feature.
+    * **`ffa.ts`:** A pure "grouper." `groupFFA` implements two distinct methods: `SIMPLE_CHUNK` (simple top-N) and `SWISS_GROUPING` (smart grouping that *reuses* `buildOpponentMap` to avoid rematches).
+
+---
+
+## 6. 🖥️ Module 5.4: UI & Integration
+
+The UI was built to expose the power of this new engine, resulting in several new features.
+
+* **`app/.../rounds/page.tsx` (The Hub):**
+    * This is the main "Rounds & Matches" tab.
+    * It uses `useSWR` to fetch four data sources: `/rounds` (for matches), `/standings` (for the player standings card), `/tournament` (for `customStats`), and `/teams` (for the live team name map).
+    * It passes the `liveTeamNameMap` to each `MatchCard`, allowing them to display custom team names.
+
+* **`app/.../_components/GenerateRoundDialog.tsx` (The "Control Panel"):**
+    * This component was completely rebuilt. It **no longer uses `react-hook-form`**, correctly identifying that its complex, conditional state is better managed with `React.useState`.
+    * It is composed of sub-components (`SwissOptionsSection`, `FfaOptionsSection`, `TeamOptionsSection`) for maintainability.
+    * It provides a UI for *all* new logic:
+        * **Swiss:** Variant (FIDE/Generic), Avoid Rematches, Ignore Rounds.
+        * **FFA:** Group Size, Group Method, Per-Place Scoring.
+        * **Team:** Team Size, Team Method, Team Persistence (Reuse teams from Round X).
+    * **New Feature:** A "Custom" tab (`CustomPairingsSection`) was added, providing a full drag-and-drop UI for manually creating matches, fulfilling a key "flexibility" goal.
+
+* **`app/.../teams/page.tsx` (New Page):**
+    * An entirely new page was created at the `/teams` tab.
+    * It fetches all persistent teams from `GET /api/.../teams`.
+    * It allows the user to filter teams by the round they played in.
+    * It features the `RenameTeamForm`, which uses `PATCH /api/.../teams/[teamId]` to update a team's `customName`, with the change instantly reflected in the `rounds` page.
+
+* **`app/.../_components/MatchResultForm.tsx` (Auto-Saving Form):**
+    * This component was also built (correctly) *without* `react-hook-form`.
+    * It uses `useState` to manage results and `React.useEffect` (on change) to **auto-save** data to the `POST /api/matches/[matchId]/report` endpoint.
+    * This provides a robust, "live" feel where results are saved instantly as the user types them, with no "Save" button required.
+
+
+
+
+# Project Workflow Report
+
+This report outlines the major UI/UX improvements and critical bug fixes implemented, adhering to our "Zero Tech Debt" and "Diagnose First" principles.
+
+---
+
+## 1. 🎨 UI/UX Improvements
+
+Our primary goal was to create a more compact, inline, and usable interface for match management.
+
+### MatchCard & Result Reporting
+* **Single-Line Header:** The `MatchCard` was completely refactored. The match title, status, and result inputs now all share a single, compact header row.
+* **Inline Result Buttons:** Bulky `<Select>` dropdowns for 1v1 and Team matches were replaced with a `ResultButtonGroup` component, allowing 1-click result reporting.
+* **Smart FFA Placements:** The FFA placement inputs were refactored. The match title (which can be long) now scrolls horizontally, leaving flexible space for the placement inputs, which also scroll horizontally if they overflow.
+* **Compact Stats Table:**
+    * The "Custom Stats" section is no longer a full-width button. It's a small `[>]` toggle icon on the left.
+    * When clicked, the stats table appears *next to* the toggle, not below it, saving vertical space.
+    * The table itself is now a 2-column layout (Static Players + Scrollable Stats) to fix all "sticky column" and alignment bugs.
+    * All headers and inputs are now `left-aligned` to fix visual misalignment caused by number input spinners.
+* **Default Collapsed State:** Completed rounds and matches (including their stats) now default to a *collapsed* state when the page is loaded, providing a clean, high-level overview.
+
+### Dialog & Workflow Improvements
+* **Standardized Dialogs:** The `GenerateRoundDialog` and `AddParticipantDialog` were both refactored to have a fixed, larger height (`80dvh`) with internally scrolling content, preventing jarring layout shifts.
+* **Surgical Swap Feature:** Implemented the critical "Swap Participants" feature. This allows for surgical, 1-to-1 swaps between pending matches, bye matches, or the bench, without requiring a full round re-seed.
+
+---
+
+## 2. 🛠️ "Zero Tech Debt" Refactoring
+
+* **`MatchCard` De-coupling:** The `MatchCard.tsx` component was identified as a monolith. All state management and API logic were extracted into a new `useMatchState.ts` hook. All input rendering was extracted to a new `MatchResultInputs.tsx` component. This makes `MatchCard.tsx` a clean, declarative, and maintainable container.
+
+---
+
+## 3. 🐞 Critical Bug Fix: The `ownerId` Crash
+
+We diagnosed and fixed a critical bug that caused the "Rename Team" API to crash.
+
+* **Diagnosis (The Cause):** The new "Swap Participants" API (`POST .../rounds/[roundId]`) was correctly creating new persistent `Team` documents but was **forgetting to add the `ownerId`**.
+* **Diagnosis (The Crash):** The "Rename Team" API (`PATCH .../teams/[teamId]`) expected `team.ownerId` to exist. When it tried to rename a "corrupted" team, it crashed on `team.ownerId.toString()`.
+* **Fix 1 (The Cause):** The `POST` (Swap) API was updated to correctly query for the `tournament.ownerId` and insert it into all new `Team` documents.
+* **Fix 2 (The Crash):** The `PATCH` (Rename) API was made defensive. It now (correctly) authorizes against the *parent tournament's* `ownerId`. It also *repairs* any old, corrupted team documents it finds by adding the `ownerId` before saving, thus fixing the validation error.
+* **Fix 3 (Data Integrity):** We created and implemented a `runTeamGarbageCollector` function that is now called after any swap or round deletion. This function scans all matches and *deletes* any orphaned `Team` documents, preventing database bloat and fixing the UI bug where "Team A" would appear.
+
+
 
 
 # Project Workflow & Collaboration Guidelines (V2)  

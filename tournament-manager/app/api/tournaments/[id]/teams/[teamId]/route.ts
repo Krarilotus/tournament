@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import dbConnect from "@/lib/db";
 import { auth } from "@/lib/auth";
 import Team from "@/lib/models/Team";
+import Tournament from "@/lib/models/Tournament";
 import { updateTeamNameSchema } from "@/lib/validators";
 import { revalidatePath } from "next/cache";
 
@@ -46,23 +47,45 @@ export async function PATCH(
 
     const { customName } = validation.data;
 
+    // --- 2. Verify ownership via the TOURNAMENT ---
+    const tournament = await Tournament.findById(tournamentId);
+    if (!tournament) {
+      return NextResponse.json(
+        { message: "Tournament not found" },
+        { status: 404 }
+      );
+    }
+    if (tournament.ownerId.toString() !== session.user.id) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+
     // Find the team
     const team = await Team.findById(teamId);
     if (!team) {
       return NextResponse.json({ message: "Team not found" }, { status: 404 });
     }
 
-    // Verify ownership
-    if (
-      team.ownerId.toString() !== session.user.id ||
-      team.tournamentId.toString() !== tournamentId
-    ) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    // --- 3. Check team belongs to tournament ---
+    if (team.tournamentId.toString() !== tournamentId) {
+      return NextResponse.json(
+        { message: "Team does not belong to this tournament" },
+        { status: 403 }
+      );
     }
 
-    // Update the name
+    // --- 4. (MODIFIED) Update name AND fix missing ownerId ---
     team.customName = customName;
-    await team.save();
+    
+    // This is the fix:
+    // If the team is missing an ownerId (from the old bug),
+    // assign it from the parent tournament we already loaded.
+    if (!team.ownerId) {
+      console.log(`Repairing missing ownerId for team ${team._id}`);
+      team.ownerId = tournament.ownerId;
+    }
+    
+    await team.save(); // This will now pass validation
+    // --- END MODIFICATION ---
 
     // Revalidate all paths that show team names
     revalidatePath(`/dashboard/${tournamentId}/rounds`);

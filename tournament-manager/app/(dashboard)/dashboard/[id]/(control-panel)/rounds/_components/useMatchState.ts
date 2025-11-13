@@ -129,13 +129,17 @@ export function useMatchState({
 
     setFfaPlacings(nextFfaPlacings);
     setStatsState(nextStats);
-    setStatsCollapsed(!hasAnyStats);
+    // --- MODIFIED: Collapse if no stats OR if the match is completed ---
+    const isCompleted = match.status === "completed";
+    setStatsCollapsed(!hasAnyStats || isCompleted);
+    // --- END MODIFICATION ---
     setError(null);
     setHasTouched(false);
     isHydrating.current = false;
   }, [
     match._id,
     mode,
+    match.status, // --- ADDED dependency
     JSON.stringify(match.participants),
     JSON.stringify(statNames),
   ]);

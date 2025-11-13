@@ -3,9 +3,13 @@
 import React from "react";
 import { SerializedMatch } from "@/lib/types";
 import { makeTeamLookupKey } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+// --- MODIFIED: Import new icon ---
+import { X, Replace } from "lucide-react";
 import { MatchResultStatsTable } from "./MatchResultForm";
-import { useMatchState } from "./useMatchState"; // <-- IMPORT THE HOOK
-import { MatchResultInputs } from "./MatchResultInputs"; // <-- IMPORT THE INPUTS
+import { useMatchState } from "./useMatchState";
+import { MatchResultInputs } from "./MatchResultInputs";
 
 // ---- Helper Functions (Rendering Only) ----
 
@@ -30,13 +34,15 @@ function getParticipantId(p: any): string {
   return "";
 }
 
-// ---- Match card (Now a Clean Container) ------------------------------
+// ---- Match card (Clean Container) ------------------------------
 
 interface MatchCardProps {
   match: SerializedMatch;
   customStats: string[];
   teamNameMap: Map<string, string>;
   onResultChanged: () => void;
+  // --- ADDED: Prop for triggering swap modal ---
+  onStartSwap: (match: SerializedMatch) => void;
 }
 
 export function MatchCard({
@@ -44,6 +50,7 @@ export function MatchCard({
   customStats,
   teamNameMap,
   onResultChanged,
+  onStartSwap, // --- ADDED ---
 }: MatchCardProps) {
   // --- All logic is now handled by this single hook ---
   const {
@@ -118,11 +125,24 @@ export function MatchCard({
         </div>
 
         {/* Right: Result Inputs (Flexible) */}
-        <div className="flex-1 flex-shrink min-w-0 flex justify-end">
+        <div className="flex-1 flex-shrink min-w-0 flex justify-end items-center gap-1">
           {submitting && (
             <span className="absolute -top-1 right-0 text-[10px] text-muted-foreground">
               Saving…
             </span>
+          )}
+
+          {/* --- ADDED: Swap Button --- */}
+          {mode !== "bye" && !isCompleted && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={() => onStartSwap(match)}
+              title="Swap a participant"
+            >
+              <Replace className="h-4 w-4" />
+            </Button>
           )}
 
           {/* --- Use the new dumb component --- */}

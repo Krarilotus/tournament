@@ -17,11 +17,10 @@ import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { GenerateRoundDialog } from "./_components/GenerateRoundDialog";
-// --- MODIFIED: Importing the new component ---
 import { MatchCard } from "./_components/MatchCard";
-// --- END MODIFIED ---
 import { CurrentStandingsCard } from "./_components/CurrentStandingsCard";
 import { DeleteRoundButton } from "./_components/DeleteRoundButton";
+import { SwapParticipantsDialog } from "./_components/SwapParticipantsDialog";
 
 import type { PopulatedRound, SerializedMatch } from "@/lib/types";
 import type { SerializedParticipant } from "@/lib/models/Participant";
@@ -95,7 +94,6 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
     }
     return map;
   }, [allTeams]);
-  // --- END ADDED SECTION ---
 
   const customStats: string[] =
     tournament?.settings?.customStats &&
@@ -114,11 +112,44 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
     Record<string, boolean>
   >({});
 
+  const [hasInitializedRounds, setHasInitializedRounds] = React.useState(false);
+
+  const [swapState, setSwapState] = React.useState<{
+    open: boolean;
+    matchA: SerializedMatch | null;
+  }>({ open: false, matchA: null });
+
+  React.useEffect(() => {
+    if (rounds && !hasInitializedRounds) {
+      const initialCollapsedState: Record<string, boolean> = {};
+      for (const round of rounds) {
+        if (round.status === "completed") {
+          initialCollapsedState[round._id] = true;
+        }
+      }
+      setCollapsedRounds(initialCollapsedState);
+      setHasInitializedRounds(true);
+    }
+  }, [rounds, hasInitializedRounds]);
+
   const refreshAll = React.useCallback(() => {
     mutateRounds();
     mutateStandings();
     setStandingsVersion((v) => v + 1);
   }, [mutateRounds, mutateStandings]);
+
+  const handleStartSwap = (match: SerializedMatch) => {
+    setSwapState({ open: true, matchA: match });
+  };
+
+  const handleCloseSwap = () => {
+    setSwapState({ open: false, matchA: null });
+  };
+
+  const handleSwapped = () => {
+    handleCloseSwap();
+    refreshAll();
+  };
 
   if (roundsError || standingsError) {
     return (
@@ -227,6 +258,7 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
                           customStats={customStats}
                           teamNameMap={liveTeamNameMap}
                           onResultChanged={refreshAll}
+                          onStartSwap={handleStartSwap}
                         />
                       ))}
                     </CardContent>
@@ -235,6 +267,19 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
               );
             })}
         </div>
+      )}
+
+      {/* --- MODIFIED: Render the modal conditionally, passing standings --- */}
+      {swapState.open && swapState.matchA && (
+        <SwapParticipantsDialog
+          tournamentId={tournamentId}
+          roundId={swapState.matchA.roundId}
+          matchA={swapState.matchA}
+          allRounds={rounds || []}
+          standings={standings || []} 
+          onClose={handleCloseSwap}
+          onSwapped={handleSwapped}
+        />
       )}
     </div>
   );

@@ -24,6 +24,7 @@ interface ITournamentForClient {
   description: string;
   status: "draft" | "published" | "running" | "completed" | "archived";
   createdAt: string;
+  participantCount: number;
 }
 
 async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
@@ -31,16 +32,19 @@ async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
     await dbConnect();
     const tournaments = await Tournament.find({ ownerId: userId })
       .sort({ createdAt: -1 })
+      .select("name description status createdAt participants")
       .lean();
 
     return tournaments.map(
       (t) =>
         ({
-          ...t,
           _id: t._id.toString(),
-          createdAt: t.createdAt.toISOString(),
+          name: t.name,
           description: t.description || "No description provided.",
-        }) as ITournamentForClient
+          status: t.status,
+          createdAt: t.createdAt.toISOString(),
+          participantCount: t.participants.length,
+        } as ITournamentForClient)
     );
   } catch (error) {
     console.error("Failed to fetch tournaments:", error);
@@ -85,32 +89,39 @@ export default async function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {tournaments.map((t) => (
-            <Card key={t._id} className="flex flex-col">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-lg">{t.name}</CardTitle>
-                  <Badge variant="outline" className="shrink-0 capitalize">
-                    {t.status}
-                  </Badge>
-                </div>
-                <CardDescription className="line-clamp-2">
-                  {t.description}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <p className="text-xs text-muted-foreground">
-                  Created on: {new Date(t.createdAt).toLocaleDateString()}
-                </p>
-              </CardContent>
-              <CardFooter className="flex items-center justify-between gap-2">
-                <Button asChild>
-                  <Link href={`/dashboard/${t._id}`}>Manage</Link>
-                </Button>
-                <DeleteTournamentButton tournamentId={t._id} />
-              </CardFooter>
-            </Card>
-          ))}
+          {tournaments.map((t) => {
+            const manageHref =
+              t.participantCount > 0
+                ? `/dashboard/${t._id}/rounds`
+                : `/dashboard/${t._id}`;
+
+            return (
+              <Card key={t._id} className="flex flex-col">
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-lg">{t.name}</CardTitle>
+                    <Badge variant="outline" className="shrink-0 capitalize">
+                      {t.status}
+                    </Badge>
+                  </div>
+                  <CardDescription className="line-clamp-2">
+                    {t.description}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-grow">
+                  <p className="text-xs text-muted-foreground">
+                    Created on: {new Date(t.createdAt).toLocaleDateString()}
+                  </p>
+                </CardContent>
+                <CardFooter className="flex items-center justify-between gap-2">
+                  <Button asChild>
+                    <Link href={manageHref}>Manage</Link>
+                  </Button>
+                  <DeleteTournamentButton tournamentId={t._id} />
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

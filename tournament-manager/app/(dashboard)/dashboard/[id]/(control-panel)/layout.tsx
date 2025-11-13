@@ -1,10 +1,8 @@
 // app/(dashboard)/dashboard/[id]/(control-panel)/layout.tsx
 import React from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import Link from "next/link";
-import { Users, Swords, Settings as SettingsIcon, Users2 } from "lucide-react";
 import dbConnect from "@/lib/db";
 import Tournament from "@/lib/models/Tournament";
+import { TournamentTabs } from "./_components/TournamentTabs";
 
 async function getTournament(id: string) {
   await dbConnect();
@@ -35,39 +33,7 @@ export default async function TournamentControlPanelLayout({
         </p>
       </div>
 
-      <Tabs defaultValue="participants" className="w-full">
-        <TabsList>
-          <TabsTrigger value="participants" asChild>
-            <Link href={`/dashboard/${id}`}>
-              <Users className="mr-2 h-4 w-4" />
-              Participants
-            </Link>
-          </TabsTrigger>
-
-          <TabsTrigger value="rounds" asChild>
-            <Link href={`/dashboard/${id}/rounds`}>
-              <Swords className="mr-2 h-4 w-4" />
-              Rounds &amp; Matches
-            </Link>
-          </TabsTrigger>
-
-          <TabsTrigger value="teams" asChild>
-            <Link href={`/dashboard/${id}/teams`}>
-              <Users2 className="mr-2 h-4 w-4" />
-              Teams
-            </Link>
-          </TabsTrigger>
-
-          <TabsTrigger value="settings" asChild>
-            <Link href={`/dashboard/${id}/settings`}>
-              <SettingsIcon className="mr-2 h-4 w-4" />
-              Settings
-            </Link>
-          </TabsTrigger>
-        </TabsList>
-
-        <div className="mt-6">{children}</div>
-      </Tabs>
+      <TournamentTabs id={id}>{children}</TournamentTabs>
     </div>
   );
 }
