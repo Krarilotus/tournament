@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from 'react';
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -22,6 +22,7 @@ function getBaseUrl() {
   if (typeof window !== "undefined") {
     return window.location.origin;
   }
+  // Fallback for server-side (though this component is client-side)
   return "https://tournament.unofficialcrusaderpatch.com";
 }
 
@@ -41,14 +42,7 @@ export function PublishTournamentCard({ tournament }: PublishCardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [didCopy, setDidCopy] = useState(false);
 
-  // This component needs to know the base URL
-  const [baseUrl, setBaseUrl] = useState("");
-  React.useEffect(() => {
-    // We must set this in useEffect to avoid hydration mismatches
-    setBaseUrl(getBaseUrl());
-  }, []);
-
-  const publicUrl = slug ? `${baseUrl}/${slug}` : "";
+  const publicUrl = `${getBaseUrl()}/${slug}`;
   const isPublished = status !== "draft";
 
   const handlePublish = async (publish: boolean) => {
@@ -81,7 +75,6 @@ export function PublishTournamentCard({ tournament }: PublishCardProps) {
   };
 
   const handleCopy = () => {
-    if (!publicUrl) return;
     navigator.clipboard.writeText(publicUrl).then(() => {
       setDidCopy(true);
       setTimeout(() => setDidCopy(false), 2000);
