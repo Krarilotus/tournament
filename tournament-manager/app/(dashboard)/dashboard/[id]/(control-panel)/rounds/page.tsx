@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { use } from "react";
 import useSWR from "swr";
 import {
   Card,
@@ -41,13 +41,21 @@ type SerializedTeam = {
   genericName?: string;
 };
 
+// Props: params is a Promise here
+interface RoundsPageProps {
+  params: Promise<{ id: string }>;
+  isReadOnly?: boolean;
+}
+
 // ---- main page -----------------------------------------------------
 
-export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
-  const params = React.use(props.params);
-  const { id: tournamentId } = params;
+export default function RoundsPage({
+  params,
+  isReadOnly = false,
+}: RoundsPageProps) {
+  // UNWRAP PARAMS PROPERLY IN CLIENT
+  const { id: tournamentId } = use(params);
 
-  // rounds (with matches populated)
   const {
     data: rounds,
     error: roundsError,
@@ -58,7 +66,6 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
     fetcher
   );
 
-  // player standings
   const {
     data: standings,
     error: standingsError,
@@ -69,19 +76,16 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
     fetcher
   );
 
-  // tournament meta (for custom stats + tie breakers)
   const { data: tournament } = useSWR<any>(
     `/api/tournaments/${tournamentId}`,
     fetcher
   );
 
-  // --- Fetch all persistent teams ---
   const { data: allTeams } = useSWR<SerializedTeam[]>(
     `/api/tournaments/${tournamentId}/teams`,
     fetcher
   );
 
-  // --- Create the live team name map ---
   const liveTeamNameMap = React.useMemo(() => {
     const map = new Map<string, string>();
     if (allTeams) {
@@ -139,6 +143,7 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
   }, [mutateRounds, mutateStandings]);
 
   const handleStartSwap = (match: SerializedMatch) => {
+    if (isReadOnly) return;
     setSwapState({ open: true, matchA: match });
   };
 
@@ -170,10 +175,13 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
         <h2 className="text-2xl font-bold tracking-tight">
           Rounds &amp; Matches
         </h2>
-        <GenerateRoundDialog
-          tournamentId={tournamentId}
-          onRoundGenerated={refreshAll}
-        />
+        {/* Hide button in read-only */}
+        {!isReadOnly && (
+          <GenerateRoundDialog
+            tournamentId={tournamentId}
+            onRoundGenerated={refreshAll}
+          />
+        )}
       </div>
 
       {/* Standings (players/teams) */}
@@ -184,9 +192,9 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
         standingsLoading={standingsLoading}
         tieBreakers={tieBreakers}
         version={standingsVersion}
+        isReadOnly={isReadOnly}
       />
 
-      {/* Rounds list */}
       {roundsLoading && (
         <p className="text-sm text-muted-foreground">Loading rounds...</p>
       )}
@@ -241,11 +249,14 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
                         </span>
                       </div>
 
-                      <DeleteRoundButton
-                        tournamentId={tournamentId}
-                        roundId={round._id}
-                        onDeleted={refreshAll}
-                      />
+                      {/* Hide delete button in read-only */}
+                      {!isReadOnly && (
+                        <DeleteRoundButton
+                          tournamentId={tournamentId}
+                          roundId={round._id}
+                          onDeleted={refreshAll}
+                        />
+                      )}
                     </CardTitle>
                   </CardHeader>
 
@@ -259,6 +270,7 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
                           teamNameMap={liveTeamNameMap}
                           onResultChanged={refreshAll}
                           onStartSwap={handleStartSwap}
+                          isReadOnly={isReadOnly}
                         />
                       ))}
                     </CardContent>
@@ -269,14 +281,14 @@ export default function RoundsPage(props: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
-      {/* --- MODIFIED: Render the modal conditionally, passing standings --- */}
-      {swapState.open && swapState.matchA && (
+      {/* Hide swap dialog in read-only */}
+      {!isReadOnly && swapState.open && swapState.matchA && (
         <SwapParticipantsDialog
           tournamentId={tournamentId}
           roundId={swapState.matchA.roundId}
           matchA={swapState.matchA}
           allRounds={rounds || []}
-          standings={standings || []} 
+          standings={standings || []}
           onClose={handleCloseSwap}
           onSwapped={handleSwapped}
         />

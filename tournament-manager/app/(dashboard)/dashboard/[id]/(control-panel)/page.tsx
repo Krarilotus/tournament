@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/[id]/(control-panel)/page.tsx
 "use client";
 
 import React, { useState, useEffect, use, useCallback } from "react";
@@ -6,18 +7,13 @@ import { SerializedParticipant } from "@/lib/models/Participant";
 import { AddParticipantDialog } from "./_components/AddParticipantDialog";
 import { ParticipantsTable } from "./_components/ParticipantsTable";
 import type { ParticipantsLayout } from "./_components/ParticipantsTable";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-// --- REMOVED: useRouter ---
 
+// NOTE: params is a Promise here (Next 16 behavior).
 type PageProps = {
   params: Promise<{ id: string }>;
+  isReadOnly?: boolean;
 };
 
 type TournamentMeta = {
@@ -27,18 +23,18 @@ type TournamentMeta = {
   };
 };
 
-export default function ParticipantsPage({ params }: PageProps) {
+export default function ParticipantsPage({
+  params,
+  isReadOnly = false,
+}: PageProps) {
+  // Properly unwrap params in a client component
   const { id } = use(params);
-  // --- REMOVED: router ---
 
   const [participants, setParticipants] = useState<SerializedParticipant[]>([]);
   const [tiebreakers, setTiebreakers] = useState<string[]>([]);
   const [layout, setLayout] = useState<ParticipantsLayout | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  // --- REMOVED: redirectStatus state ---
-
-  // --- SIMPLIFIED: Reverted to a standard fetchData callback ---
   const fetchData = useCallback(
     async (opts?: { initial?: boolean }) => {
       if (!id) return;
@@ -68,8 +64,7 @@ export default function ParticipantsPage({ params }: PageProps) {
 
         setParticipants(participantsData);
 
-        const rawTieBreakers =
-          tournamentData.settings?.tieBreakers ?? [];
+        const rawTieBreakers = tournamentData.settings?.tieBreakers ?? [];
         setTiebreakers(
           rawTieBreakers.length > 0 ? rawTieBreakers : ["points"]
         );
@@ -91,22 +86,21 @@ export default function ParticipantsPage({ params }: PageProps) {
     [id]
   );
 
-  // --- SIMPLIFIED: Standard useEffect for initial load ---
   useEffect(() => {
     fetchData({ initial: true });
   }, [fetchData]);
-  // --- END MODIFICATION ---
 
   const handleParticipantsChanged = useCallback(() => {
-    // silent refresh: no big spinner
     fetchData({ initial: false });
   }, [fetchData]);
 
   const handleLayoutChange = useCallback(
     (newLayout: ParticipantsLayout) => {
+      // Do not save layout in read-only mode
+      if (isReadOnly) return;
+
       setLayout(newLayout);
 
-      // Persist to server (fire-and-forget)
       fetch(`/api/tournaments/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -119,49 +113,52 @@ export default function ParticipantsPage({ params }: PageProps) {
         console.error("Failed to save layout", err);
       });
     },
-    [id]
+    [id, isReadOnly]
   );
 
-  // --- SIMPLIFIED: Reverted to simple loading check ---
   const showInitialSpinner =
     isInitialLoading && participants.length === 0;
-  // --- END MODIFICATION ---
-
-  // --- REMOVED: Full page loader for redirecting ---
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between items-center">
-          <CardTitle>Participants</CardTitle>
+    <div className="space-y-6">
+      {/* Header – same pattern as Rounds */}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold tracking-tight">Participants</h2>
+        {!isReadOnly && (
           <AddParticipantDialog
             tournamentId={id}
             onParticipantsChanged={handleParticipantsChanged}
           />
-        </div>
-        <CardDescription>
-          Add, remove, and manage participants. Dropped participants
-          (toggled off) will be excluded from future matchmaking.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {showInitialSpinner ? (
-          <div className="flex items-center justify-center p-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">
-              Loading participants...
-            </span>
-          </div>
-        ) : (
-          <ParticipantsTable
-            data={participants}
-            tiebreakers={tiebreakers}
-            initialLayout={layout || undefined}
-            onParticipantsChanged={handleParticipantsChanged}
-            onLayoutChange={handleLayoutChange}
-          />
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        {isReadOnly
+          ? "A list of all participants in this tournament."
+          : "Add, remove, and manage participants. Dropped participants (toggled off) will be excluded from future matchmaking."}
+      </p>
+
+      <Card>
+        <CardContent>
+          {showInitialSpinner ? (
+            <div className="flex items-center justify-center p-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">
+                Loading participants...
+              </span>
+            </div>
+          ) : (
+            <ParticipantsTable
+              data={participants}
+              tiebreakers={tiebreakers}
+              initialLayout={layout || undefined}
+              onParticipantsChanged={handleParticipantsChanged}
+              onLayoutChange={handleLayoutChange}
+              isReadOnly={isReadOnly}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

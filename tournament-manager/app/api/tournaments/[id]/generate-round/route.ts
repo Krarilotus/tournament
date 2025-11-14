@@ -176,11 +176,7 @@ export async function POST(
       roundNumber: currentRoundNumber,
       system: config.system,
       status: "pending",
-      // --- THIS IS THE FIX ---
-      // If system is "custom", it has no 'options'. Set to undefined.
-      // Otherwise, store the 'options' that were used.
       systemOptions: config.system === "custom" ? undefined : config.options,
-      // --- END FIX ---
       pointSystem,
       ffaPlacements,
     });

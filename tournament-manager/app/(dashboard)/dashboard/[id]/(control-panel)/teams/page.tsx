@@ -1,15 +1,12 @@
+// app/(dashboard)/dashboard/[id]/(control-panel)/teams/page.tsx
 "use client";
 
 import React, { useState, use, useMemo } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { toast } from "sonner";
-import { SerializedParticipant } from "@/lib/models/Participant";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Select,
@@ -22,15 +19,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertCircle, Edit, Check, X } from "lucide-react";
 import { PopulatedRound, SerializedMatch } from "@/lib/types";
-// --- ADDED IMPORTS ---
+import { makeTeamLookupKey } from "@/lib/utils";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
-// --- END ADDED IMPORTS ---
-
-// --- Types ---
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -48,8 +42,6 @@ type SerializedTeam = {
   customName?: string;
   genericName?: string;
 };
-
-// --- Rename Form Sub-Component ---
 
 function RenameTeamForm({
   tournamentId,
@@ -86,7 +78,7 @@ function RenameTeamForm({
 
       toast.success(`Team renamed to "${name}"`);
       setIsEditing(false);
-      onRenamed(); // This triggers a SWR re-fetch
+      onRenamed();
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -142,13 +134,16 @@ function RenameTeamForm({
   );
 }
 
-// --- Main Page Component ---
-
-export default function TeamsPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: tournamentId } = use(params);
+export default function TeamsPage({
+  params: paramsPromise,
+  isReadOnly = false,
+}: {
+  params: Promise<{ id: string }>;
+  isReadOnly?: boolean;
+}) {
+  const { id: tournamentId } = use(paramsPromise);
   const { mutate } = useSWRConfig();
 
-  // 1. Fetch all persistent teams
   const {
     data: allTeams,
     error: teamsError,
@@ -158,7 +153,6 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
     fetcher
   );
 
-  // 2. Fetch all rounds
   const {
     data: allRounds,
     error: roundsError,
@@ -170,14 +164,12 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
 
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
 
-  // 3. Filter rounds to find only "Team Rounds"
   const teamRounds = useMemo(() => {
     return (allRounds || [])
       .filter((r) => r.system.startsWith("team-"))
       .sort((a, b) => a.roundNumber - b.roundNumber);
   }, [allRounds]);
 
-  // 4. Get the lookup keys for teams that played in the selected round
   const teamKeysInSelectedRound = useMemo(() => {
     if (!selectedRoundId) return null;
     const round = teamRounds.find((r) => r._id === selectedRoundId);
@@ -185,10 +177,9 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
 
     const keys = new Set<string>();
     for (const match of round.matches as SerializedMatch[]) {
-      const teamsInMatch: Record<string, string[]> = {}; // "A" -> [p1, p2]
+      const teamsInMatch: Record<string, string[]> = {};
       for (const p of match.participants) {
         const teamLabel = p.team;
-        // This logic correctly handles participantId being a string or an object
         const pId =
           typeof p.participantId === "string"
             ? p.participantId
@@ -200,15 +191,13 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
         }
       }
       for (const playerIds of Object.values(teamsInMatch)) {
-        // We must sort the IDs to create the lookup key,
-        const lookupKey = playerIds.slice().sort().join("|");
+        const lookupKey = makeTeamLookupKey(playerIds);
         keys.add(lookupKey);
       }
     }
     return keys;
   }, [selectedRoundId, teamRounds]);
 
-  // 5. Filter the master team list based on the keys from step 4
   const filteredTeams = useMemo(() => {
     if (!teamKeysInSelectedRound) return allTeams || [];
     return (allTeams || []).filter((team) =>
@@ -216,12 +205,9 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
     );
   }, [allTeams, teamKeysInSelectedRound]);
 
-  // 6. Handler to refresh SWR cache after renaming
   const handleTeamRenamed = () => {
     mutate(`/api/tournaments/${tournamentId}/teams`);
   };
-
-  // --- Render Logic ---
 
   if (roundsLoading || teamsLoading) {
     return (
@@ -243,73 +229,83 @@ export default function TeamsPage({ params }: { params: Promise<{ id: string }> 
     );
   }
 
+  const description = isReadOnly
+    ? "Viewing persistent teams created during team-based rounds."
+    : "View and rename persistent teams created during team-based rounds. Names will be re-used in future rounds.";
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Team Management</CardTitle>
-        <CardDescription>
-          View and rename persistent teams created during team-based rounds.
-          Names will be re-used in future rounds.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Select a Team Round</label>
-          <Select
-            value={selectedRoundId || "all"}
-            onValueChange={(val) =>
-              setSelectedRoundId(val === "all" ? null : val)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a round..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                All Teams ({allTeams?.length || 0})
-              </SelectItem>
-              {teamRounds.map((r) => (
-                <SelectItem key={r._id} value={r._id}>
-                  Round {r.roundNumber} ({r.system})
+    <div className="space-y-6">
+      {/* Header like Rounds/Participants */}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold tracking-tight">Teams</h2>
+        {/* future: “Create team” button could go here */}
+      </div>
+      <p className="text-sm text-muted-foreground">{description}</p>
+
+      <Card>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select a Team Round</label>
+            <Select
+              value={selectedRoundId || "all"}
+              onValueChange={(val) =>
+                setSelectedRoundId(val === "all" ? null : val)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a round..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  All Teams ({allTeams?.length || 0})
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+                {teamRounds.map((r) => (
+                  <SelectItem key={r._id} value={r._id}>
+                    Round {r.roundNumber} ({r.system})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredTeams.map((team) => (
-            <Card key={team._id} className="flex flex-col">
-              <CardHeader className="pb-2">
-                <RenameTeamForm
-                  tournamentId={tournamentId}
-                  team={team}
-                  onRenamed={handleTeamRenamed}
-                />
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {team.playerIds.map((p) => (
-                    <li key={p._id}>
-                      {p.name} {p.customId ? `(${p.customId})` : ""}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredTeams.map((team) => (
+              <Card key={team._id} className="flex flex-col">
+                <CardContent className="pt-4">
+                  {isReadOnly ? (
+                    <span className="text-lg font-semibold">
+                      {team.customName || team.genericName}
+                    </span>
+                  ) : (
+                    <RenameTeamForm
+                      tournamentId={tournamentId}
+                      team={team}
+                      onRenamed={handleTeamRenamed}
+                    />
+                  )}
+                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    {team.playerIds.map((p) => (
+                      <li key={p._id}>
+                        {p.name} {p.customId ? `(${p.customId})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
 
-        {filteredTeams.length === 0 && (
-          <div className="text-center text-sm text-muted-foreground p-8">
-            {teamRounds.length === 0
-              ? "No team-based rounds have been generated yet."
-              : selectedRoundId
+          {filteredTeams.length === 0 && (
+            <div className="text-center text-sm text-muted-foreground p-8">
+              {teamRounds.length === 0
+                ? "No team-based rounds have been generated yet."
+                : selectedRoundId
                 ? "No teams found for this round."
                 : "No teams found for this tournament."}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

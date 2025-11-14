@@ -9,7 +9,7 @@ import { X } from "lucide-react";
 type Mode = "1v1" | "team" | "ffa" | "bye";
 type Winner = "A" | "B" | "DRAW" | null;
 
-// --- ResultButtonGroup (Internal Component) ---
+// ... (ResultButtonGroup component is unchanged) ...
 function ResultButtonGroup({
   currentWinner,
   labelA,
@@ -62,7 +62,79 @@ function ResultButtonGroup({
   );
 }
 
-// --- Helper to get Participant ID (for FFA) ---
+// --- (NEW) Read-Only Display Component ---
+function ReadOnlyResultDisplay({
+  mode,
+  winner,
+  participants,
+  teamADisplayName,
+  teamBDisplayName,
+  ffaPlacings,
+}: {
+  mode: Mode;
+  winner: Winner;
+  participants: any[];
+  teamADisplayName?: string;
+  teamBDisplayName?: string;
+  ffaPlacings: Record<string, number | undefined>;
+}) {
+  const textCn = "text-sm font-medium text-muted-foreground";
+
+  if (mode === "1v1" || mode === "team") {
+    let labelA =
+      mode === "team"
+        ? teamADisplayName || "Team A"
+        : participants[0]?.participantId?.name ?? "Player A";
+    let labelB =
+      mode === "team"
+        ? teamBDisplayName || "Team B"
+        : participants[1]?.participantId?.name ?? "Player B";
+
+    let resultText = "No result";
+    if (winner === "DRAW") resultText = "Draw";
+    else if (winner === "A") resultText = `${labelA} won`;
+    else if (winner === "B") resultText = `${labelB} won`;
+
+    return <span className={textCn}>{resultText}</span>;
+  }
+
+  if (mode === "ffa") {
+    const sorted = participants
+      .map((p) => ({
+        id: getParticipantId(p),
+        name:
+          p.participantId?.name ||
+          (getParticipantId(p) || "N/A").slice(-4),
+        place: ffaPlacings[getParticipantId(p)],
+      }))
+      .sort((a, b) => (a.place ?? 999) - (b.place ?? 999));
+
+    if (sorted.every((p) => !p.place)) {
+      return <span className={textCn}>No results</span>;
+    }
+
+    return (
+      <ol className="flex flex-wrap gap-x-3 gap-y-1">
+        {sorted.map(
+          (p, idx) =>
+            p.place && (
+              <li key={p.id} className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{p.place}.</span>{" "}
+                {p.name}
+              </li>
+            )
+        )}
+      </ol>
+    );
+  }
+
+  if (mode === "bye") {
+    return <div className="text-sm text-muted-foreground">Bye (auto win)</div>;
+  }
+  return null;
+}
+
+// ... (getParticipantId helper is unchanged) ...
 function getParticipantId(p: any): string {
   if (typeof p.participantId === "string") {
     return p.participantId;
@@ -83,9 +155,10 @@ interface MatchResultInputsProps {
   teamBDisplayName?: string;
   onWinnerChange: (winner: Winner) => void;
   onFfaChange: (pid: string, value: string) => void;
+  isReadOnly?: boolean; // --- (NEW) ---
 }
 
-// --- Dumb Component for Rendering Inputs ---
+// --- (MODIFIED) Main Component ---
 export function MatchResultInputs({
   mode,
   participants,
@@ -95,7 +168,23 @@ export function MatchResultInputs({
   teamBDisplayName,
   onWinnerChange,
   onFfaChange,
+  isReadOnly = false, // --- (NEW) ---
 }: MatchResultInputsProps) {
+  // --- (NEW) Render read-only view ---
+  if (isReadOnly) {
+    return (
+      <ReadOnlyResultDisplay
+        mode={mode}
+        winner={winner}
+        participants={participants}
+        teamADisplayName={teamADisplayName}
+        teamBDisplayName={teamBDisplayName}
+        ffaPlacings={ffaPlacings}
+      />
+    );
+  }
+
+  // --- (EXISTING) Render editable inputs ---
   if (mode === "1v1" && participants.length === 2) {
     return (
       <ResultButtonGroup
@@ -124,7 +213,6 @@ export function MatchResultInputs({
         <span className="text-muted-foreground flex-shrink-0">
           Placements:
         </span>
-        {/* Scrollable container for inputs */}
         <div className="overflow-x-auto flex-1">
           <div className="flex flex-row gap-2">
             {participants.map((p) => {

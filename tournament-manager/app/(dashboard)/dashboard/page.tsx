@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DeleteTournamentButton } from "./DeleteTournamentButton";
+import { ImportTournamentDialog } from "./ImportTournamentDialog";
+import { ExportTournamentDialog } from "./ExportTournamentDialog";
 
 export const revalidate = 0;
 
@@ -25,6 +27,7 @@ interface ITournamentForClient {
   status: "draft" | "published" | "running" | "completed" | "archived";
   createdAt: string;
   participantCount: number;
+  urlSlug?: string | null;
 }
 
 async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
@@ -32,7 +35,7 @@ async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
     await dbConnect();
     const tournaments = await Tournament.find({ ownerId: userId })
       .sort({ createdAt: -1 })
-      .select("name description status createdAt participants")
+      .select("name description status createdAt participants urlSlug")
       .lean();
 
     return tournaments.map(
@@ -44,6 +47,7 @@ async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
           status: t.status,
           createdAt: t.createdAt.toISOString(),
           participantCount: t.participants.length,
+          urlSlug: (t as any).urlSlug ?? null,
         } as ITournamentForClient)
     );
   } catch (error) {
@@ -62,14 +66,18 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold md:text-3xl">My Tournaments</h1>
-        <Button asChild>
-          <Link href="/dashboard/create">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Create New Tournament
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <ImportTournamentDialog />
+          <ExportTournamentDialog />
+          <Button asChild className="sm:ml-auto">
+            <Link href="/dashboard/create">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Create New Tournament
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {tournaments.length === 0 ? (
@@ -95,6 +103,9 @@ export default async function DashboardPage() {
                 ? `/dashboard/${t._id}/rounds`
                 : `/dashboard/${t._id}`;
 
+            const showPublicButton =
+              t.status === "published" && t.urlSlug;
+
             return (
               <Card key={t._id} className="flex flex-col">
                 <CardHeader>
@@ -114,9 +125,18 @@ export default async function DashboardPage() {
                   </p>
                 </CardContent>
                 <CardFooter className="flex items-center justify-between gap-2">
-                  <Button asChild>
-                    <Link href={manageHref}>Manage</Link>
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button asChild>
+                      <Link href={manageHref}>Manage</Link>
+                    </Button>
+                    {showPublicButton && (
+                      <Button asChild variant="outline">
+                        <Link href={`/${t.urlSlug}`} target="_blank">
+                          Public
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
                   <DeleteTournamentButton tournamentId={t._id} />
                 </CardFooter>
               </Card>

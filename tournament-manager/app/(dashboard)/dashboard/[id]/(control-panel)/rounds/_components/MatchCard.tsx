@@ -4,14 +4,10 @@ import React from "react";
 import { SerializedMatch } from "@/lib/types";
 import { makeTeamLookupKey } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-// --- MODIFIED: Import new icon ---
-import { X, Replace } from "lucide-react";
 import { MatchResultStatsTable } from "./MatchResultForm";
 import { useMatchState } from "./useMatchState";
 import { MatchResultInputs } from "./MatchResultInputs";
-
-// ---- Helper Functions (Rendering Only) ----
+import { Replace } from "lucide-react";
 
 function getParticipantName(p: any): string {
   if (typeof p.participantId === "object" && p.participantId?.name) {
@@ -34,15 +30,13 @@ function getParticipantId(p: any): string {
   return "";
 }
 
-// ---- Match card (Clean Container) ------------------------------
-
 interface MatchCardProps {
   match: SerializedMatch;
   customStats: string[];
   teamNameMap: Map<string, string>;
   onResultChanged: () => void;
-  // --- ADDED: Prop for triggering swap modal ---
   onStartSwap: (match: SerializedMatch) => void;
+  isReadOnly?: boolean;
 }
 
 export function MatchCard({
@@ -50,9 +44,9 @@ export function MatchCard({
   customStats,
   teamNameMap,
   onResultChanged,
-  onStartSwap, // --- ADDED ---
+  onStartSwap,
+  isReadOnly = false,
 }: MatchCardProps) {
-  // --- All logic is now handled by this single hook ---
   const {
     participants,
     mode,
@@ -70,11 +64,11 @@ export function MatchCard({
     match,
     statNames: customStats,
     onResultChanged,
+    isReadOnly,
   });
 
   const [showPlayers, setShowPlayers] = React.useState(false);
 
-  // --- Data for rendering ---
   const hasTeams = participants.some((p) => p.team);
   const teamAPlayers = hasTeams
     ? participants.filter((p) => (p.team ?? "").toUpperCase() === "A")
@@ -97,18 +91,17 @@ export function MatchCard({
   const teamBDisplay =
     teamNameMap.get(lookupKeyB) || teamNames.B || "Team B";
 
+  // IMPORTANT: use the safe `participants` array from the hook
   const title = hasTeams
     ? `${teamADisplay} vs ${teamBDisplay}`
-    : (match.participants as any[])
-        .map((p: any) => getParticipantName(p))
-        .join(" vs ");
+    : participants.length > 0
+    ? participants.map((p: any) => getParticipantName(p)).join(" vs ")
+    : "Match";
 
-  // --- RENDER (Declarative JSX) ---
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-card/40 px-3 py-2">
-      {/* --- Header Row --- */}
+      {/* Header Row */}
       <div className="relative flex min-h-[28px] items-center justify-between gap-3">
-        {/* Left: Title (Scrollable) & Status */}
         <div className="min-w-0 flex-shrink-0 max-w-xs md:max-w-md lg:max-w-lg overflow-x-auto">
           <p className="whitespace-nowrap text-sm font-medium">{title}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -116,15 +109,16 @@ export function MatchCard({
               className={
                 isCompleted
                   ? "text-emerald-400 font-medium"
+                  : isReadOnly
+                  ? "text-muted-foreground"
                   : "text-yellow-400"
               }
             >
-              {isCompleted ? "completed" : "set results"}
+              {isCompleted ? "completed" : isReadOnly ? "pending" : "set results"}
             </span>
           </p>
         </div>
 
-        {/* Right: Result Inputs (Flexible) */}
         <div className="flex-1 flex-shrink min-w-0 flex justify-end items-center gap-1">
           {submitting && (
             <span className="absolute -top-1 right-0 text-[10px] text-muted-foreground">
@@ -132,8 +126,7 @@ export function MatchCard({
             </span>
           )}
 
-          {/* --- ADDED: Swap Button --- */}
-          {mode !== "bye" && !isCompleted && (
+          {!isReadOnly && mode !== "bye" && !isCompleted && (
             <Button
               variant="ghost"
               size="icon"
@@ -145,7 +138,6 @@ export function MatchCard({
             </Button>
           )}
 
-          {/* --- Use the new dumb component --- */}
           <MatchResultInputs
             mode={mode}
             participants={participants}
@@ -155,12 +147,11 @@ export function MatchCard({
             teamBDisplayName={teamBDisplay}
             onWinnerChange={handleWinnerChange}
             onFfaChange={handleFfaChange}
+            isReadOnly={isReadOnly}
           />
         </div>
       </div>
-      {/* --- END OF HEADER ROW --- */}
 
-      {/* --- Body Row (Stats) --- */}
       {customStats.length > 0 && (
         <MatchResultStatsTable
           participants={participants}
@@ -169,6 +160,7 @@ export function MatchCard({
           statsCollapsed={statsCollapsed}
           onToggleCollapse={toggleStats}
           onStatsChange={updateStat}
+          isReadOnly={isReadOnly}
         />
       )}
 
@@ -178,7 +170,6 @@ export function MatchCard({
         </p>
       )}
 
-      {/* --- Player list (unchanged) --- */}
       {hasTeams && (
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
           <button
@@ -190,13 +181,14 @@ export function MatchCard({
           </button>
         </div>
       )}
+
       {hasTeams && showPlayers && (
         <div className="mt-1 grid gap-4 border-t pt-2 text-xs md:grid-cols-2">
           <div>
             <p className="mb-1 font-semibold">{teamADisplay}</p>
             <ul className="space-y-0.5">
               {teamAPlayers.map((p: any) => (
-                <li key={getParticipantName(p)} className="truncate">
+                <li key={getParticipantId(p)} className="truncate">
                   {getParticipantName(p)}
                 </li>
               ))}
@@ -206,7 +198,7 @@ export function MatchCard({
             <p className="mb-1 font-semibold">{teamBDisplay}</p>
             <ul className="space-y-0.5">
               {teamBPlayers.map((p: any) => (
-                <li key={getParticipantName(p)} className="truncate">
+                <li key={getParticipantId(p)} className="truncate">
                   {getParticipantName(p)}
                 </li>
               ))}

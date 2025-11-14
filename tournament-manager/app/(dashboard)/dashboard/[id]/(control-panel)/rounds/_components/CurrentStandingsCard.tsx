@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/[id]/(control-panel)/rounds/_components/CurrentStandingsCard.tsx
 "use client";
 
 import * as React from "react";
@@ -11,7 +12,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { alphaCode } from "@/lib/utils";
 
 import type { PopulatedRound } from "@/lib/types";
 import type { SerializedParticipant } from "@/lib/models/Participant";
@@ -33,18 +33,16 @@ type Props = {
   standingsLoading: boolean;
   tieBreakers: string[];
   version: number; // bump when results change
+  isReadOnly?: boolean;
+  defaultCollapsed?: boolean;
 };
 
-// Helper: format score keys
 function formatScoreKey(key: string): string {
   if (key === "points") return "Points";
   if (key === "buchholz") return "Buchholz";
   if (key === "buchholz2") return "Buchholz-2";
-  // Capitalize first letter for custom stats like "kills"
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
-
-// --- Consistent score formatting ---
 function formatScoreValue(val: number): string | number {
   if (val % 1 !== 0) {
     return val.toFixed(2);
@@ -59,8 +57,12 @@ export function CurrentStandingsCard({
   standingsLoading,
   tieBreakers,
   version,
+  isReadOnly = false,
+  defaultCollapsed = false
 }: Props) {
-  const [showStandings, setShowStandings] = React.useState(true);
+  const [showStandings, setShowStandings] = React.useState(
+    !defaultCollapsed
+  );
   const [mode, setMode] = React.useState<"players" | "teams">("players");
 
   const teamRounds = useMemo(
@@ -97,39 +99,62 @@ export function CurrentStandingsCard({
     fetcher
   );
 
+  const isCollapsed = !showStandings;
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center gap-3">
-          <CardTitle className="text-base font-semibold">
-            Current Standings
-          </CardTitle>
-          <div className="flex overflow-hidden rounded-md border text-xs">
-            <button
-              type="button"
-              className={`px-2 py-1 ${
-                mode === "players"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground"
-              }`}
-              onClick={() => setMode("players")}
-            >
-              Players
-            </button>
-            <button
-              type="button"
-              className={`px-2 py-1 ${
-                mode === "teams"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground"
-              }`}
-              onClick={() => setMode("teams")}
-            >
-              Teams
-            </button>
+        {/* LEFT: collapse chevron + title + mode toggle */}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => setShowStandings((prev) => !prev)}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+            <span className="sr-only">
+              {isCollapsed ? "Show standings" : "Hide standings"}
+            </span>
+          </Button>
+
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base font-semibold">
+              Current Standings
+            </CardTitle>
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              <button
+                type="button"
+                className={`px-2 py-1 ${
+                  mode === "players"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground"
+                }`}
+                onClick={() => setMode("players")}
+              >
+                Players
+              </button>
+              <button
+                type="button"
+                className={`px-2 py-1 ${
+                  mode === "teams"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground"
+                }`}
+                onClick={() => setMode("teams")}
+              >
+                Teams
+              </button>
+            </div>
           </div>
         </div>
 
+        {/* RIGHT: team seed round selector (when in team mode) */}
         <div className="flex items-center gap-2">
           {mode === "teams" && teamRounds.length > 0 && (
             <div className="flex items-center gap-1 text-xs">
@@ -151,34 +176,14 @@ export function CurrentStandingsCard({
               </select>
             </div>
           )}
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => setShowStandings((prev) => !prev)}
-          >
-            {showStandings ? (
-              <>
-                <ChevronDown className="mr-1 h-3 w-3" />
-                Hide
-              </>
-            ) : (
-              <>
-                <ChevronRight className="mr-1 h-3 w-3" />
-                Show
-              </>
-            )}
-          </Button>
         </div>
       </CardHeader>
 
       {showStandings && (
         <CardContent className="pt-0">
+          {/* rest of the component unchanged */}
           {mode === "players" && (
             <>
-              {/* ... loading/empty states ... */}
               {!standingsLoading && !hasStandings && (
                 <p className="py-2 text-sm text-muted-foreground">
                   No standings yet. Generate a round and report some results.
@@ -244,7 +249,6 @@ export function CurrentStandingsCard({
 
           {mode === "teams" && (
             <>
-              {/* ... loading/empty states ... */}
               {teamRounds.length > 0 &&
                 !teamStandingsLoading &&
                 !teamStandingsError &&
@@ -274,7 +278,6 @@ export function CurrentStandingsCard({
                           ))}
                         </tr>
                       </thead>
-                      
                       <tbody>
                         {teamStandings.map((t, idx) => (
                           <tr key={t.key} className="border-b last:border-0">

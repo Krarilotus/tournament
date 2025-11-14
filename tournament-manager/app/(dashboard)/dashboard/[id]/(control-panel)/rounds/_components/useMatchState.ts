@@ -3,26 +3,30 @@
 import React from "react";
 import { SerializedMatch } from "@/lib/types";
 
-// --- Types ---
 type Mode = "1v1" | "team" | "ffa" | "bye";
 type Winner = "A" | "B" | "DRAW" | null;
 
-// --- Helper Functions (Internal to this file) ---
-
 function getParticipantId(p: any): string {
-  if (typeof p.participantId === "string") {
+  if (typeof p?.participantId === "string") {
     return p.participantId;
   }
-  if (typeof p.participantId === "object" && p.participantId?._id) {
+  if (
+    typeof p?.participantId === "object" &&
+    p.participantId &&
+    (p.participantId as { _id?: string })._id
+  ) {
     return (p.participantId as { _id: string })._id;
   }
   return "";
 }
 
 function detectMode(match: SerializedMatch): Mode {
-  const parts = match.participants as any[];
+  const parts = ((match as any).participants as any[]) ?? [];
+
+  if (parts.length === 0) return "ffa"; // harmless fallback
   if (parts.length === 1) return "bye";
-  const hasTeam = parts.some((p: any) => p.team);
+
+  const hasTeam = parts.some((p: any) => p?.team);
   if (hasTeam) return "team";
   if (parts.length === 2) return "1v1";
   return "ffa";
@@ -35,20 +39,20 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// --- Hook Props ---
 interface UseMatchStateProps {
   match: SerializedMatch;
   statNames: string[];
   onResultChanged: () => void;
+  isReadOnly?: boolean;
 }
 
-// --- The Hook ---
 export function useMatchState({
   match,
   statNames,
   onResultChanged,
+  isReadOnly = false,
 }: UseMatchStateProps) {
-  const participants = match.participants as any[];
+  const participants = ((match as any).participants as any[]) ?? [];
   const mode = detectMode(match);
 
   const [submitting, setSubmitting] = React.useState(false);
@@ -66,9 +70,8 @@ export function useMatchState({
   const isHydrating = React.useRef(true);
   const [hasTouched, setHasTouched] = React.useState(false);
 
-  // --- Hydration logic (runs once) ---
   React.useEffect(() => {
-    const participants = match.participants as any[];
+    const participants = ((match as any).participants as any[]) ?? [];
 
     setWinner(null);
     setWinnerTouched(false);
@@ -85,6 +88,7 @@ export function useMatchState({
       else if (resA === "draw" && resB === "draw") setWinner("DRAW");
       else setWinner(null);
     }
+
     if (mode === "team") {
       let teamARes: string | null = null;
       let teamBRes: string | null = null;
@@ -99,6 +103,7 @@ export function useMatchState({
       else if (teamARes === "draw" && teamBRes === "draw") setWinner("DRAW");
       else setWinner(null);
     }
+
     if (mode === "ffa") {
       for (const p of participants) {
         const pid = getParticipantId(p);
@@ -129,24 +134,21 @@ export function useMatchState({
 
     setFfaPlacings(nextFfaPlacings);
     setStatsState(nextStats);
-    // --- MODIFIED: Collapse if no stats OR if the match is completed ---
     const isCompleted = match.status === "completed";
     setStatsCollapsed(!hasAnyStats || isCompleted);
-    // --- END MODIFICATION ---
     setError(null);
     setHasTouched(false);
     isHydrating.current = false;
   }, [
     match._id,
+    match.status,
     mode,
-    match.status, // --- ADDED dependency
-    JSON.stringify(match.participants),
+    JSON.stringify((match as any).participants ?? []),
     JSON.stringify(statNames),
   ]);
 
-  // --- Save logic ---
   const save = React.useCallback(async () => {
-    if (isHydrating.current || !hasTouched) return;
+    if (isHydrating.current || !hasTouched || isReadOnly) return;
 
     setSubmitting(true);
     setError(null);
@@ -159,7 +161,7 @@ export function useMatchState({
         customStats: Record<string, number>;
       }[] = [];
 
-      const participants = match.participants as any[];
+      const participants = ((match as any).participants as any[]) ?? [];
       const a = participants[0] as any;
       const b = participants[1] as any;
 
@@ -230,10 +232,11 @@ export function useMatchState({
       setSubmitting(false);
     }
   }, [
-    match.participants,
     match._id,
+    (match as any).participants,
     mode,
     hasTouched,
+    isReadOnly,
     statsState,
     statNames,
     winner,
@@ -242,19 +245,14 @@ export function useMatchState({
     onResultChanged,
   ]);
 
-  // --- Auto-save effect ---
   React.useEffect(() => {
     if (isHydrating.current || !hasTouched) return;
-    const timer = setTimeout(() => save(), 500); // Debounce save
+    const timer = setTimeout(() => save(), 500);
     return () => clearTimeout(timer);
   }, [hasTouched, winner, ffaPlacings, statsState, save]);
 
-  // --- Event Handlers ---
-  function updateStat(
-    participantId: string,
-    statName: string,
-    value: number
-  ) {
+  function updateStat(participantId: string, statName: string, value: number) {
+    if (isReadOnly) return;
     setStatsState((prev) => ({
       ...prev,
       [participantId]: {
@@ -266,12 +264,14 @@ export function useMatchState({
   }
 
   function handleWinnerChange(newWinner: Winner) {
+    if (isReadOnly) return;
     setWinner(newWinner);
     setWinnerTouched(true);
     setHasTouched(true);
   }
 
   function handleFfaChange(pid: string, value: string) {
+    if (isReadOnly) return;
     setFfaPlacings((prev) => ({
       ...prev,
       [pid]: value === "" ? undefined : Number(value),
@@ -283,7 +283,6 @@ export function useMatchState({
     setStatsCollapsed((s) => !s);
   }
 
-  // --- Return all state and handlers ---
   return {
     participants,
     mode,

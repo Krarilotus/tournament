@@ -47,74 +47,54 @@ interface ParticipantsTableProps {
   onParticipantsChanged?: () => void;
   initialLayout?: ParticipantsLayout;
   onLayoutChange?: (layout: ParticipantsLayout) => void;
+  isReadOnly?: boolean; // --- (NEW) ---
 }
 
-// Human-friendly header label for a stat key like "points" or "Kills"
+// ... (prettyStatLabel and getScore helpers remain the same) ...
 function prettyStatLabel(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
-
-// Safely access a score field from participant.scores
 function getScore(p: SerializedParticipant, key: string): number | null {
   const scores = (p as any).scores as Record<string, unknown> | undefined;
   const val = scores?.[key];
   return typeof val === "number" ? val : null;
 }
+// --- (NEW) Refactored baseColumns into a function ---
+function getBaseColumns(
+  isReadOnly: boolean,
+  onParticipantsChanged?: () => void
+): ColumnDef<SerializedParticipant>[] {
+  const columns: ColumnDef<SerializedParticipant>[] = [
+    {
+      id: "name",
+      accessorKey: "name",
+      header: "Name",
+      enableSorting: true,
+    },
+    {
+      id: "customId",
+      accessorKey: "customId",
+      header: "Custom ID",
+      cell: ({ row }) => row.original.customId || "N/A",
+      enableSorting: true,
+    },
+    {
+      id: "wins",
+      header: "Wins",
+      enableSorting: true,
+      accessorFn: (row) => getScore(row, "wins") ?? 0,
+    },
+    {
+      id: "losses",
+      header: "Losses",
+      enableSorting: true,
+      accessorFn: (row) => getScore(row, "losses") ?? 0,
+    },
+  ];
 
-export function ParticipantsTable({
-  data,
-  tiebreakers = [],
-  onParticipantsChanged,
-  initialLayout,
-  onLayoutChange,
-}: ParticipantsTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>(() =>
-    initialLayout?.sorting ?? [{ id: "name", desc: false }]
-  );
-
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>(
-      () => initialLayout?.columnVisibility ?? {}
-    );
-
-  const [columnOrder, setColumnOrder] =
-    React.useState<ColumnOrderState>(
-      () => initialLayout?.columnOrder ?? []
-    );
-
-  const visibleTieBreakers = React.useMemo(
-    () => new Set(tiebreakers.slice(0, 2)), // only first two visible by default
-    [tiebreakers]
-  );
-
-  // Base columns
-  const baseColumns = React.useMemo<ColumnDef<SerializedParticipant>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: "Name",
-        enableSorting: true,
-      },
-      {
-        id: "customId",
-        accessorKey: "customId",
-        header: "Custom ID",
-        cell: ({ row }) => row.original.customId || "N/A",
-        enableSorting: true,
-      },
-      {
-        id: "wins",
-        header: "Wins",
-        enableSorting: true,
-        accessorFn: (row) => getScore(row, "wins") ?? 0,
-      },
-      {
-        id: "losses",
-        header: "Losses",
-        enableSorting: true,
-        accessorFn: (row) => getScore(row, "losses") ?? 0,
-      },
+  // --- (NEW) Conditionally add admin columns ---
+  if (!isReadOnly) {
+    columns.push(
       {
         id: "isActive",
         header: "Active",
@@ -137,12 +117,47 @@ export function ParticipantsTable({
             onParticipantsChanged={onParticipantsChanged}
           />
         ),
-      },
-    ],
-    [onParticipantsChanged]
+      }
+    );
+  }
+
+  return columns;
+}
+
+export function ParticipantsTable({
+  data,
+  tiebreakers = [],
+  onParticipantsChanged,
+  initialLayout,
+  onLayoutChange,
+  isReadOnly = false, // --- (NEW) Default to false ---
+}: ParticipantsTableProps) {
+  const [sorting, setSorting] = React.useState<SortingState>(
+    () => initialLayout?.sorting ?? [{ id: "name", desc: false }]
   );
 
-  // Extra columns from tie-breakers (excluding ones we already show)
+  const [columnVisibility, setColumnVisibility] =
+    React.useState<VisibilityState>(
+      () => initialLayout?.columnVisibility ?? {}
+    );
+
+  const [columnOrder, setColumnOrder] =
+    React.useState<ColumnOrderState>(
+      () => initialLayout?.columnOrder ?? []
+    );
+
+  const visibleTieBreakers = React.useMemo(
+    () => new Set(tiebreakers.slice(0, 2)), // only first two visible by default
+    [tiebreakers]
+  );
+
+  // --- (MODIFIED) Call the new function ---
+  const baseColumns = React.useMemo<ColumnDef<SerializedParticipant>[]>(
+    () => getBaseColumns(isReadOnly, onParticipantsChanged),
+    [isReadOnly, onParticipantsChanged]
+  );
+
+  // ... (extraTiebreakerCols logic is unchanged) ...
   const extraTiebreakerCols = React.useMemo<
     ColumnDef<SerializedParticipant>[]
   >(() => {
@@ -158,11 +173,25 @@ export function ParticipantsTable({
       }));
   }, [tiebreakers]);
 
-  // Insert extra tiebreaker columns between "customId" and "points"
-  const allColumns = React.useMemo(
-    () => [...baseColumns.slice(0, 2), ...extraTiebreakerCols, ...baseColumns.slice(2)],
-    [baseColumns, extraTiebreakerCols]
-  );
+  // --- (MODIFIED) Insert extra tiebreaker columns ---
+  const allColumns = React.useMemo(() => {
+    // Find index of 'wins'
+    const winsIndex = baseColumns.findIndex((c) => c.id === "wins");
+    if (winsIndex === -1) {
+      // Fallback if admin columns aren't present
+      return [
+        ...baseColumns.slice(0, 2),
+        ...extraTiebreakerCols,
+        ...baseColumns.slice(2),
+      ];
+    }
+    // Insert before 'wins'
+    return [
+      ...baseColumns.slice(0, winsIndex),
+      ...extraTiebreakerCols,
+      ...baseColumns.slice(winsIndex),
+    ];
+  }, [baseColumns, extraTiebreakerCols]);
 
   const table = useReactTable({
     data,
@@ -182,11 +211,7 @@ export function ParticipantsTable({
 
   const leafColumns = table.getAllLeafColumns();
 
-  // Default column visibility:
-  // - if initialLayout exists, we respect it and do nothing here
-  // - if no initialLayout and no visibility set yet, apply default:
-  //   - tie-breakers: only first two visible
-  //   - others: visible
+  // ... (useEffect for default column visibility is unchanged) ...
   React.useEffect(() => {
     if (initialLayout) return;
     if (Object.keys(columnVisibility).length > 0) return;
@@ -211,13 +236,12 @@ export function ParticipantsTable({
     initialLayout,
   ]);
 
-  // Effective column order: from state if present, otherwise from leaf columns
   const effectiveOrder: string[] =
     columnOrder.length > 0
       ? columnOrder
       : leafColumns.map((c) => c.id);
 
-  // Initialize columnOrder once we have columns if it's empty
+  // ... (useEffect for columnOrder initialization is unchanged) ...
   React.useEffect(() => {
     if (columnOrder.length === 0 && leafColumns.length > 0) {
       const defaultOrder = leafColumns.map((c) => c.id);
@@ -226,7 +250,6 @@ export function ParticipantsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafColumns.length]);
 
-  // Single "swap right" function
   const swapColumnRight = (id: string) => {
     const order =
       table.getState().columnOrder.length > 0
@@ -234,7 +257,7 @@ export function ParticipantsTable({
         : leafColumns.map((c) => c.id);
 
     const idx = order.indexOf(id);
-    if (idx === -1 || idx === order.length - 1) return; // can't move last
+    if (idx === -1 || idx === order.length - 1) return;
 
     const newOrder = [...order];
     const targetIdx = idx + 1;
@@ -245,7 +268,7 @@ export function ParticipantsTable({
     setColumnOrder(newOrder);
   };
 
-  // Notify parent when layout changes (for persistence)
+  // ... (useEffect for onLayoutChange is unchanged) ...
   React.useEffect(() => {
     if (!onLayoutChange) return;
 
@@ -261,39 +284,42 @@ export function ParticipantsTable({
 
   return (
     <div className="space-y-2">
-      {/* Toolbar: column visibility controls */}
-      <div className="flex justify-between items-center">
-        <span className="text-xs text-muted-foreground">
-          Click a header to sort. Use the swap icon to reorder columns.
-        </span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm">
-              <SlidersHorizontal className="mr-2 h-3 w-3" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {leafColumns.map((column) => (
-              <DropdownMenuCheckboxItem
-                key={column.id}
-                className="capitalize"
-                checked={column.getIsVisible()}
-                onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                onSelect={(e) => e.preventDefault()} // <- keep menu open
-              >
-                {column.columnDef.header
-                  ? String(
-                      typeof column.columnDef.header === "string"
-                        ? column.columnDef.header
-                        : column.id
-                    )
-                  : column.id}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {/* --- (MODIFIED) Hide toolbar in read-only mode --- */}
+      {!isReadOnly && (
+        <div className="flex justify-between items-center">
+          <span className="text-xs text-muted-foreground">
+            Click a header to sort. Use the swap icon to reorder columns.
+          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <SlidersHorizontal className="mr-2 h-3 w-3" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {leafColumns.map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column.id}
+                  className="capitalize"
+                  checked={column.getIsVisible()}
+                  onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {column.columnDef.header
+                    ? String(
+                        typeof column.columnDef.header === "string"
+                          ? column.columnDef.header
+                          : column.id
+                      )
+                    : column.id}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+      {/* --- (END MODIFICATION) --- */}
 
       <div className="rounded-md border">
         <Table>
@@ -343,8 +369,8 @@ export function ParticipantsTable({
                           </span>
                         )}
 
-                        {/* swap button: only if not last column */}
-                        {!isLast && (
+                        {/* --- (MODIFIED) Hide swap button in read-only --- */}
+                        {!isLast && !isReadOnly && (
                           <button
                             type="button"
                             className="p-0.5 text-[10px] text-muted-foreground hover:text-foreground"

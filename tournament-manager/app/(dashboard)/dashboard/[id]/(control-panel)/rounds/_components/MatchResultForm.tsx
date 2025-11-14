@@ -12,8 +12,10 @@ export interface MatchResultStatsTableProps {
   statsCollapsed: boolean; // If the table is visible
   onToggleCollapse: () => void; // Callback to toggle visibility
   onStatsChange: (pid: string, statName: string, value: number) => void; // Callback to update state
+  isReadOnly?: boolean;
 }
 
+// ... (getParticipantIdRaw helper is unchanged) ...
 function getParticipantIdRaw(p: any): string {
   if (typeof p.participantId === "string") return p.participantId;
   if (p.participantId && typeof p.participantId === "object") {
@@ -29,6 +31,7 @@ export function MatchResultStatsTable({
   statsCollapsed,
   onToggleCollapse,
   onStatsChange,
+  isReadOnly = false, // --- (NEW) Default to false ---
 }: MatchResultStatsTableProps) {
   if (statNames.length === 0) {
     return null;
@@ -36,7 +39,7 @@ export function MatchResultStatsTable({
 
   return (
     <div className="flex w-full flex-row items-start gap-1 text-xs">
-      {/* Column 1: The Toggle Button */}
+      {/* ... (Column 1: Toggle Button is unchanged) ... */}
       <Button
         type="button"
         variant="ghost"
@@ -100,7 +103,6 @@ export function MatchResultStatsTable({
                 {statNames.map((statName) => (
                   <div
                     key={statName}
-                    /* --- MODIFIED: Removed text-center, added pl-1 --- */
                     className="truncate text-[10px] font-medium text-muted-foreground h-4 flex items-center justify-start pl-1"
                   >
                     {statName}
@@ -113,25 +115,39 @@ export function MatchResultStatsTable({
                   return (
                     <React.Fragment key={pid}>
                       {/* Stat Inputs */}
-                      {statNames.map((statName) => (
-                        <Input
-                          key={`${pid}-${statName}`}
-                          id={`${pid}-${statName}`}
-                          type="number"
-                          min={0}
-                          placeholder="0"
-                          /* --- MODIFIED: Removed text-center --- */
-                          className="h-7 w-full border-0 border-b rounded-none px-1 shadow-none focus-visible:ring-0"
-                          value={statsState[pid]?.[statName] ?? ""}
-                          onChange={(e) =>
-                            onStatsChange(
-                              pid,
-                              statName,
-                              e.target.value === "" ? 0 : Number(e.target.value)
-                            )
-                          }
-                        />
-                      ))}
+                      {statNames.map((statName) => {
+                        const value = statsState[pid]?.[statName] ?? "";
+                        if (isReadOnly) {
+                          return (
+                            <div
+                              key={`${pid}-${statName}`}
+                              className="h-7 pl-1 text-[11px] flex items-center"
+                            >
+                              {value || "0"}
+                            </div>
+                          );
+                        }
+                        // --- Render input ---
+                        return (
+                          <Input
+                            key={`${pid}-${statName}`}
+                            id={`${pid}-${statName}`}
+                            type="number"
+                            min={0}
+                            placeholder="0"
+                            className="h-7 w-full border-0 border-b rounded-none px-1 shadow-none focus-visible:ring-0"
+                            value={value}
+                            onChange={(e) =>
+                              onStatsChange(
+                                pid,
+                                statName,
+                                e.target.value === "" ? 0 : Number(e.target.value)
+                              )
+                            }
+                            disabled={isReadOnly}
+                          />
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })}

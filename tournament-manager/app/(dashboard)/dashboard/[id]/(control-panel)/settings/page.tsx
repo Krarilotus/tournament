@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/[id]/(control-panel)/settings/page.tsx
 "use client";
 
 import { useForm, SubmitHandler } from "react-hook-form";
@@ -26,9 +27,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2, ArrowLeft } from "lucide-react";
+import { X, Loader2, Download, Copy } from "lucide-react";
 import React, { useEffect, useState, use } from "react";
 import { TieBreakerDnd } from "../_components/TieBreakerDnd";
 
@@ -39,8 +39,21 @@ export default function TournamentSettingsPage(props: {
 }) {
   const params = use(props.params);
   const router = useRouter();
+
   const [isLoading, setIsLoading] = useState(true);
   const [statInput, setStatInput] = useState("");
+
+  // publish-related state
+  const [publishStatus, setPublishStatus] = useState<string>("draft");
+  const [urlSlug, setUrlSlug] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
+  }, []);
 
   const form = useForm<UpdateTournamentForm>({
     resolver: zodResolver(updateTournamentSchema),
@@ -80,6 +93,9 @@ export default function TournamentSettingsPage(props: {
           customStats: data.settings.customStats,
           tieBreakers: tiebreakersToLoad.map((val: string) => ({ value: val })),
         });
+
+        setPublishStatus(data.status || "draft");
+        setUrlSlug(data.urlSlug ?? null);
       } catch (error) {
         console.error(error);
         toast.error("Could not load tournament data.");
@@ -144,6 +160,51 @@ export default function TournamentSettingsPage(props: {
     }
   };
 
+  const handlePublishToggle = async (nextPublish: boolean) => {
+    if (!params.id) return;
+
+    setIsPublishing(true);
+    try {
+      const res = await fetch(`/api/tournaments/${params.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publish: nextPublish }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message || "Failed to update publish status");
+      }
+
+      const data = await res.json();
+      setPublishStatus(data.status);
+      setUrlSlug(data.urlSlug ?? null);
+
+      toast.success(
+        nextPublish
+          ? "Tournament published. Public link is ready."
+          : "Tournament set back to draft."
+      );
+      router.refresh();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Could not change publish status.");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleCopyPublicUrl = async () => {
+    if (!origin || !urlSlug) return;
+    const url = `${origin}/${urlSlug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Public URL copied to clipboard.");
+    } catch {
+      toast.error("Could not copy URL. You can copy it manually.");
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -153,17 +214,37 @@ export default function TournamentSettingsPage(props: {
     );
   }
 
+  const isPublished = publishStatus === "published";
+  const publicUrl = urlSlug && origin ? `${origin}/${urlSlug}` : "";
+
   return (
     <div className="space-y-8">
-      <Button asChild variant="outline">
-        <Link href="/dashboard">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Dashboard
-        </Link>
-      </Button>
+      {/* Header – same pattern as Rounds */}
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold tracking-tight">
+          Tournament Settings
+        </h2>
+        <Button
+          type="submit"
+          form="tournament-settings-form"
+          disabled={form.formState.isSubmitting}
+        >
+          {form.formState.isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+            </>
+          ) : (
+            "Save Settings"
+          )}
+        </Button>
+      </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form
+          id="tournament-settings-form"
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="space-y-8"
+        >
           <Card>
             <CardHeader>
               <CardTitle>Basic Information</CardTitle>
@@ -278,7 +359,11 @@ export default function TournamentSettingsPage(props: {
                     }
                   }}
                 />
-                <Button type="button" variant="secondary" onClick={handleAddStat}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleAddStat}
+                >
                   Add
                 </Button>
               </div>
@@ -309,19 +394,104 @@ export default function TournamentSettingsPage(props: {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <TieBreakerDnd control={form.control} customStats={customStats || []} />
+              <TieBreakerDnd
+                control={form.control}
+                customStats={customStats || []}
+              />
             </CardContent>
           </Card>
 
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
-              </>
-            ) : (
-              "Save Settings"
-            )}
-          </Button>
+          {/* Publish & Share card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Publish &amp; Share</CardTitle>
+                  <CardDescription>
+                    Make this tournament viewable at a public URL.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={isPublished ? "default" : "secondary"}
+                    className="text-xs capitalize"
+                  >
+                    {isPublished ? "Published" : "Draft"}
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant={isPublished ? "outline" : "default"}
+                    onClick={() => handlePublishToggle(!isPublished)}
+                    disabled={isPublishing}
+                  >
+                    {isPublishing && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {isPublished ? "Unpublish" : "Publish"}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isPublished ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    This tournament is live. Share the public link below:
+                  </p>
+                  {urlSlug && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        readOnly
+                        value={publicUrl}
+                        className="font-mono text-xs"
+                      />
+                      <div className="flex gap-2 mt-2 sm:mt-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCopyPublicUrl}
+                        >
+                          <Copy className="mr-1 h-3 w-3" />
+                          Copy
+                        </Button>
+                        <Button asChild variant="secondary" size="sm">
+                          <Link href={`/${urlSlug}`} target="_blank">
+                            Open
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This tournament is currently private. When you publish it, a
+                  unique URL will be generated that anyone can view in
+                  read-only mode.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Export card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Archive &amp; Export</CardTitle>
+              <CardDescription>
+                Download a full JSON backup of this tournament. This file
+                contains all participants, teams, rounds, and matches.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild variant="outline">
+                <Link href={`/api/tournaments/${params.id}/export`} download>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export Tournament Data
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         </form>
       </Form>
     </div>
