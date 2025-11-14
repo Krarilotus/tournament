@@ -1,17 +1,15 @@
 // app/api/tournaments/[id]/recalculate/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
-import dbConnect from "@/lib/db";
-import { auth } from "@/lib/auth";
-import Tournament from "@/lib/models/Tournament";
-import Participant from "@/lib/models/Participant";
-import Match, { IMatch } from "@/lib/models/Match";
-import Round from "@/lib/models/Round";
-import { revalidatePath } from "next/cache";
+import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import dbConnect from '@/lib/db';
+import Tournament from '@/lib/models/Tournament';
+import Participant from '@/lib/models/Participant';
+import Match, { IMatch } from '@/lib/models/Match';
+import Round from '@/lib/models/Round';
+import { revalidatePath } from 'next/cache';
+import { validateTournamentRequest } from '@/lib/api/requestUtils';
 
 // --- Type Definitions for In-Memory Processing ---
-
-// This object holds the new, calculated data for a participant.
 type ParticipantUpdate = {
   scores: {
     points: number;
@@ -20,20 +18,15 @@ type ParticipantUpdate = {
     draws: number;
     buchholz: number;
     buchholz2: number;
-    [key: string]: any; // For dynamic custom stats
+    [key: string]: any;
   };
   matchHistory: mongoose.Types.ObjectId[];
-  // Store opponent IDs for faster lookup in Pass 4
   opponentIds: Set<string>;
 };
-
-// Map to store participant updates by their ID (as a string)
 type ParticipantUpdateMap = Map<string, ParticipantUpdate>;
-// Map to store completed matches by their ID (as a string)
 type MatchMap = Map<string, IMatch>;
 
 // --- Main API Handler ---
-
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -41,35 +34,12 @@ export async function POST(
   await dbConnect();
 
   try {
-    // 1. Get Session and Params
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const validation = await validateTournamentRequest(req, context);
+    if (!validation.ok) {
+      return validation.response;
     }
-
-    const params = await context.params;
-    const { id: tournamentId } = params;
-
-    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
-      return NextResponse.json(
-        { message: "Invalid Tournament ID" },
-        { status: 400 }
-      );
-    }
-
-    // --- Step 1: Get All Data ---
-    const tournament = await Tournament.findById(tournamentId);
-    if (!tournament) {
-      return NextResponse.json(
-        { message: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-
-    // Verify ownership
-    if (tournament.ownerId.toString() !== session.user.id) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
+    const { tournament } = validation;
+    const tournamentId = tournament._id.toString();
 
     const allParticipants = await Participant.find({
       tournamentId: tournament._id,
@@ -77,7 +47,7 @@ export async function POST(
 
     const allCompletedMatches: IMatch[] = await Match.find({
       tournamentId: tournament._id,
-      status: "completed",
+      status: 'completed',
     });
 
     // All rounds (for per-round scoring / FFA tables)
@@ -97,7 +67,7 @@ export async function POST(
     const customStatKeys = tournament.settings.customStats || [];
 
     for (const p of allParticipants) {
-      const baseScores: ParticipantUpdate["scores"] = {
+      const baseScores: ParticipantUpdate['scores'] = {
         points: 0,
         wins: 0,
         losses: 0,
@@ -126,7 +96,6 @@ export async function POST(
       for (const p of match.participants as any[]) {
         pIdsInMatch.push(p.participantId.toString());
       }
-      // --- End collect ---
 
       for (const matchParticipant of match.participants as any[]) {
         const participantId = matchParticipant.participantId.toString();
@@ -160,12 +129,12 @@ export async function POST(
           let entries: [string, number][] = [];
           if (raw instanceof Map) {
             entries = Array.from(raw.entries());
-          } else if (typeof raw === "object") {
+          } else if (typeof raw === 'object') {
             entries = Object.entries(raw) as [string, number][];
           }
 
           for (const [key, value] of entries) {
-            if (typeof value === "number" && Number.isFinite(value)) {
+            if (typeof value === 'number' && Number.isFinite(value)) {
               update.scores[key] = (update.scores[key] || 0) + value;
             }
           }
@@ -219,7 +188,7 @@ export async function POST(
       }
       update.scores.buchholz2 = buchholz2Score;
     }
-    
+
     // --- Step 6: Pass 5 - Save to Database ---
     const bulkOps: any[] = [];
     for (const [participantId, update] of participantUpdates.entries()) {
@@ -241,26 +210,25 @@ export async function POST(
     }
 
     // --- Step 7: Revalidate Paths ---
-    revalidatePath("/dashboard");
+    revalidatePath('/dashboard');
     revalidatePath(`/dashboard/${tournamentId}`);
     revalidatePath(`/dashboard/${tournamentId}/participants`);
     revalidatePath(`/dashboard/${tournamentId}/rounds`);
 
     return NextResponse.json(
-      { message: "Recalculation complete" },
+      { message: 'Recalculation complete' },
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error in recalculation engine:", error);
+    console.error('Error in recalculation engine:', error);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { message: 'Internal Server Error' },
       { status: 500 }
     );
   }
 }
 
 // --- Helper: derive points from config ---
-
 function computePointsForResult(
   tournament: any,
   round: any,
@@ -278,27 +246,27 @@ function computePointsForResult(
   // FFA: use per-place scoring table if present
   if (isFFA) {
     const ffaMap = (round?.ffaPlacements as Map<string, number>) ?? new Map();
-    const res = (matchParticipant.result || "").toString().toLowerCase();
+    const res = (matchParticipant.result || '').toString().toLowerCase();
     const placeMatch = res.match(/\d+/); // "1st" -> "1"
     if (!placeMatch) return 0;
     const key = placeMatch[0];
     const val = ffaMap.get(key);
-    return typeof val === "number" ? val : 0;
+    return typeof val === 'number' ? val : 0;
   }
 
   // 1v1 / team: use result -> win/draw/loss mapping
-  const res = (matchParticipant.result || "").toString().toLowerCase();
+  const res = (matchParticipant.result || '').toString().toLowerCase();
 
-  if (res === "win" || res === "1st") {
-    return basePointMap.get("win") ?? 0;
+  if (res === 'win' || res === '1st') {
+    return basePointMap.get('win') ?? 0;
   }
 
-  if (res === "draw") {
-    return basePointMap.get("draw") ?? 0;
+  if (res === 'draw') {
+    return basePointMap.get('draw') ?? 0;
   }
 
-  if (res === "loss") {
-    return basePointMap.get("loss") ?? 0;
+  if (res === 'loss') {
+    return basePointMap.get('loss') ?? 0;
   }
 
   // Other strings (e.g., "2nd" accidentally in non-FFA) give 0.
@@ -306,25 +274,24 @@ function computePointsForResult(
 }
 
 // --- Helper: W/L/D counters ---
-
 function tallyResult(
-  scores: ParticipantUpdate["scores"],
+  scores: ParticipantUpdate['scores'],
   result: string | undefined
 ) {
   if (!result) return;
 
   const res = result.toLowerCase();
 
-  if (res === "win" || res === "1st") {
+  if (res === 'win' || res === '1st') {
     scores.wins += 1;
   } else if (
-    res === "loss" ||
-    res.includes("nd") ||
-    res.includes("rd") ||
-    res.includes("th")
+    res === 'loss' ||
+    res.includes('nd') ||
+    res.includes('rd') ||
+    res.includes('th')
   ) {
     scores.losses += 1;
-  } else if (res === "draw") {
+  } else if (res === 'draw') {
     scores.draws += 1;
   }
 }

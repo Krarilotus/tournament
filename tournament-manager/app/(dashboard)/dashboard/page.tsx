@@ -1,10 +1,10 @@
-import React from "react";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { PlusCircle } from "lucide-react";
-import { auth } from "@/lib/auth";
-import dbConnect from "@/lib/db";
-import Tournament from "@/lib/models/Tournament";
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import { PlusCircle } from 'lucide-react';
+import { auth } from '@/lib/auth';
+import dbConnect from '@/lib/db';
+import Tournament from '@/lib/models/Tournament';
 import {
   Card,
   CardContent,
@@ -12,11 +12,11 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { DeleteTournamentButton } from "./DeleteTournamentButton";
-import { ImportTournamentDialog } from "./ImportTournamentDialog";
-import { ExportTournamentDialog } from "./ExportTournamentDialog";
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { DeleteTournamentButton } from './DeleteTournamentButton';
+import { ImportTournamentDialog } from './ImportTournamentDialog';
+import { ExportTournamentDialog } from './ExportTournamentDialog';
 
 export const revalidate = 0;
 
@@ -24,7 +24,7 @@ interface ITournamentForClient {
   _id: string;
   name: string;
   description: string;
-  status: "draft" | "published" | "running" | "completed" | "archived";
+  status: 'draft' | 'published' | 'running' | 'completed' | 'archived';
   createdAt: string;
   participantCount: number;
   urlSlug?: string | null;
@@ -33,17 +33,24 @@ interface ITournamentForClient {
 async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
   try {
     await dbConnect();
-    const tournaments = await Tournament.find({ ownerId: userId })
+
+    // --- (FIX) ---
+    // Find tournaments where the user is EITHER the owner
+    // OR their ID is in the adminIds array.
+    const tournaments = await Tournament.find({
+      $or: [{ ownerId: userId }, { adminIds: userId }],
+    })
       .sort({ createdAt: -1 })
-      .select("name description status createdAt participants urlSlug")
+      .select('name description status createdAt participants urlSlug')
       .lean();
+    // --- (END FIX) ---
 
     return tournaments.map(
       (t) =>
         ({
           _id: t._id.toString(),
           name: t.name,
-          description: t.description || "No description provided.",
+          description: t.description || 'No description provided.',
           status: t.status,
           createdAt: t.createdAt.toISOString(),
           participantCount: t.participants.length,
@@ -51,7 +58,7 @@ async function getTournaments(userId: string): Promise<ITournamentForClient[]> {
         } as ITournamentForClient)
     );
   } catch (error) {
-    console.error("Failed to fetch tournaments:", error);
+    console.error('Failed to fetch tournaments:', error);
     return [];
   }
 }
@@ -104,7 +111,7 @@ export default async function DashboardPage() {
                 : `/dashboard/${t._id}`;
 
             const showPublicButton =
-              t.status === "published" && t.urlSlug;
+              t.status === 'published' && t.urlSlug;
 
             return (
               <Card key={t._id} className="flex flex-col">

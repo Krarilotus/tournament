@@ -10,6 +10,7 @@ export interface IParticipantsLayout {
 // Interface for type-checking
 export interface ITournament extends Document<mongoose.Types.ObjectId> {
   ownerId: mongoose.Types.ObjectId;
+  adminIds: mongoose.Types.ObjectId[];
   name: string;
   description?: string;
   urlSlug?: string;
@@ -29,6 +30,12 @@ export interface ITournament extends Document<mongoose.Types.ObjectId> {
 const tournamentSchema = new Schema<ITournament>(
   {
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    // --- (FIX) ---
+    adminIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: [], // <-- Add this default value
+    },
+    // --- (END FIX) ---
     name: { type: String, required: true },
     description: { type: String },
     urlSlug: { type: String, unique: true, sparse: true },
@@ -71,6 +78,7 @@ const tournamentSchema = new Schema<ITournament>(
 
 // This line prevents Mongoose from recompiling the model in Next.js dev mode
 const Tournament: Model<ITournament> =
-  models.Tournament || mongoose.model<ITournament>('Tournament', tournamentSchema);
+  models.Tournament ||
+  mongoose.model<ITournament>('Tournament', tournamentSchema);
 
 export default Tournament;

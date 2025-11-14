@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth';
 import Match from '@/lib/models/Match';
 import Tournament from '@/lib/models/Tournament';
 import Round from '@/lib/models/Round';
+import { checkAdminAccess } from '@/lib/api/requestUtils'; // <-- 1. IMPORT
 
 // Zod schema for validating the request body
 // We expect the client to have already calculated pointsAwarded
@@ -33,9 +34,7 @@ export async function POST(
   try {
     // 1. Get Session and Params
     const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    // 2. REMOVED manual session check
 
     const params = await context.params; // Next 16/React 19 style
     const { matchId } = params;
@@ -71,9 +70,13 @@ export async function POST(
       );
     }
 
-    if (tournament.ownerId.toString() !== session.user.id) {
-      return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    // --- 3. REFACTORED SECURITY CHECK ---
+    const accessError = checkAdminAccess(tournament, session);
+    if (accessError) {
+      return accessError;
     }
+    // --- END REFACTORED CHECK ---
+    // (We also removed the old manual ownerId check)
 
     // 4. Decide status based on whether *any* participant has a non-empty result
     const anyResult = resultsBody.some(
@@ -132,7 +135,7 @@ export async function POST(
     const headers = {
       Cookie: req.headers.get('cookie') || '',
     };
-    
+
     // --- MODIFICATION: We MUST await this ---
     // This ensures the recalculation is finished before
     // we return to the client, fixing the race condition.

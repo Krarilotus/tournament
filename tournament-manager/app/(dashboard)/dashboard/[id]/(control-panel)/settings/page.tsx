@@ -1,4 +1,3 @@
-// app/(dashboard)/dashboard/[id]/(control-panel)/settings/page.tsx
 "use client";
 
 import { useForm, SubmitHandler } from "react-hook-form";
@@ -28,9 +27,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2, Download, Copy } from "lucide-react";
+import { X, Loader2, Download, Copy, ArrowLeft } from "lucide-react";
 import React, { useEffect, useState, use } from "react";
 import { TieBreakerDnd } from "../_components/TieBreakerDnd";
+import { ManageAdminsCard } from "../_components/ManageAdminsCard";
 
 export type UpdateTournamentForm = z.infer<typeof updateTournamentSchema>;
 
@@ -76,9 +76,19 @@ export default function TournamentSettingsPage(props: {
     const fetchTournament = async () => {
       try {
         const res = await fetch(`/api/tournaments/${params.id}`);
-        if (!res.ok) throw new Error("Failed to fetch tournament");
+        if (!res.ok) {
+           // Handle 403 Forbidden specifically if needed
+           if (res.status === 403) {
+            toast.error("You don't have permission to view these settings.");
+            // Optionally redirect
+            // router.push("/dashboard");
+          }
+          throw new Error("Failed to fetch tournament");
+        }
 
         const data = await res.json();
+        setPublishStatus(data.status || "draft");
+        setUrlSlug(data.urlSlug ?? null);
 
         const dbTiebreakers = data.settings.tieBreakers || [];
         const tiebreakersToLoad =
@@ -93,18 +103,19 @@ export default function TournamentSettingsPage(props: {
           customStats: data.settings.customStats,
           tieBreakers: tiebreakersToLoad.map((val: string) => ({ value: val })),
         });
-
-        setPublishStatus(data.status || "draft");
-        setUrlSlug(data.urlSlug ?? null);
       } catch (error) {
         console.error(error);
-        toast.error("Could not load tournament data.");
+        if ((error as Error).message.includes("permission")) {
+          // Already handled above
+        } else {
+          toast.error("Could not load tournament data.");
+        }
       } finally {
         setIsLoading(false);
       }
     };
     fetchTournament();
-  }, [params.id, form]);
+  }, [params.id, form, router]); // Added router to dep array
 
   const handleAddStat = () => {
     if (statInput.trim()) {
@@ -150,7 +161,13 @@ export default function TournamentSettingsPage(props: {
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error("Failed to update tournament");
+      if (!res.ok) {
+         const data = await res.json().catch(() => null);
+        if (res.status === 403) {
+          throw new Error(data?.message || "Forbidden: You do not have permission to edit.");
+        }
+        throw new Error(data?.message || "Failed to update tournament");
+      }
 
       toast.success("Tournament settings saved!");
       router.refresh();
@@ -173,6 +190,9 @@ export default function TournamentSettingsPage(props: {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+         if (res.status === 403) {
+          throw new Error(data?.message || "Forbidden: You do not have permission.");
+        }
         throw new Error(data?.message || "Failed to update publish status");
       }
 
@@ -238,6 +258,82 @@ export default function TournamentSettingsPage(props: {
           )}
         </Button>
       </div>
+
+      {/* --- (NEW) MANAGE ADMINS CARD --- */}
+      <ManageAdminsCard tournamentId={params.id} />
+
+      {/* Publish & Share card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Publish & Share</CardTitle>
+              <CardDescription>
+                Make this tournament viewable at a public URL.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={isPublished ? "default" : "secondary"}
+                className="text-xs capitalize"
+              >
+                {isPublished ? "Published" : "Draft"}
+              </Badge>
+              <Button
+                type="button"
+                variant={isPublished ? "outline" : "default"}
+                onClick={() => handlePublishToggle(!isPublished)}
+                disabled={isPublishing}
+              >
+                {isPublishing && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                {isPublished ? "Unpublish" : "Publish"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isPublished ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                This tournament is live. Share the public link below:
+              </p>
+              {urlSlug && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    readOnly
+                    value={publicUrl}
+                    className="font-mono text-xs"
+                  />
+                  <div className="flex gap-2 mt-2 sm:mt-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyPublicUrl}
+                    >
+                      <Copy className="mr-1 h-3 w-3" />
+                      Copy
+                    </Button>
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href={`/${urlSlug}`} target="_blank">
+                        Open
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              This tournament is currently private. When you publish it, a
+              unique URL will be generated that anyone can view in
+              read-only mode.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Form {...form}>
         <form
@@ -401,83 +497,10 @@ export default function TournamentSettingsPage(props: {
             </CardContent>
           </Card>
 
-          {/* Publish & Share card */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle>Publish &amp; Share</CardTitle>
-                  <CardDescription>
-                    Make this tournament viewable at a public URL.
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={isPublished ? "default" : "secondary"}
-                    className="text-xs capitalize"
-                  >
-                    {isPublished ? "Published" : "Draft"}
-                  </Badge>
-                  <Button
-                    type="button"
-                    variant={isPublished ? "outline" : "default"}
-                    onClick={() => handlePublishToggle(!isPublished)}
-                    disabled={isPublishing}
-                  >
-                    {isPublishing && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {isPublished ? "Unpublish" : "Publish"}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {isPublished ? (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    This tournament is live. Share the public link below:
-                  </p>
-                  {urlSlug && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Input
-                        readOnly
-                        value={publicUrl}
-                        className="font-mono text-xs"
-                      />
-                      <div className="flex gap-2 mt-2 sm:mt-0">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCopyPublicUrl}
-                        >
-                          <Copy className="mr-1 h-3 w-3" />
-                          Copy
-                        </Button>
-                        <Button asChild variant="secondary" size="sm">
-                          <Link href={`/${urlSlug}`} target="_blank">
-                            Open
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  This tournament is currently private. When you publish it, a
-                  unique URL will be generated that anyone can view in
-                  read-only mode.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Export card */}
           <Card>
             <CardHeader>
-              <CardTitle>Archive &amp; Export</CardTitle>
+              <CardTitle>Archive & Export</CardTitle>
               <CardDescription>
                 Download a full JSON backup of this tournament. This file
                 contains all participants, teams, rounds, and matches.
@@ -485,7 +508,10 @@ export default function TournamentSettingsPage(props: {
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline">
-                <Link href={`/api/tournaments/${params.id}/export`} download>
+                <Link
+                  href={`/api/tournaments/${params.id}/export`}
+                  download
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export Tournament Data
                 </Link>

@@ -1,24 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
-import dbConnect from "@/lib/db";
-import { auth } from "@/lib/auth";
-import Tournament from "@/lib/models/Tournament";
-import Round from "@/lib/models/Round";
-import Match from "@/lib/models/Match";
-import Team from "@/lib/models/Team";
-import { z } from "zod";
-import { makeTeamLookupKey } from "@/lib/utils";
+import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import dbConnect from '@/lib/db';
+import Tournament from '@/lib/models/Tournament';
+import Round from '@/lib/models/Round';
+import Match from '@/lib/models/Match';
+import Team from '@/lib/models/Team';
+import { z } from 'zod';
+import { makeTeamLookupKey } from '@/lib/utils';
+import { validateTournamentRequest } from '@/lib/api/requestUtils';
 
 // --- ADDED: Team Garbage Collector Helper Function ---
 async function runTeamGarbageCollector(
   tournamentId: string | mongoose.Types.ObjectId
 ) {
   try {
-    console.log("Running team garbage collection...");
+    console.log('Running team garbage collection...');
     // 1. Find all *all* matches
     const allMatches = await Match.find({
       tournamentId: tournamentId,
-      "participants.team": { $exists: true },
+      'participants.team': { $exists: true },
     });
 
     // 2. Build a set of all lookupKeys *still in use*
@@ -43,15 +43,17 @@ async function runTeamGarbageCollector(
     });
 
     if (deleteResult.deletedCount > 0) {
-      console.log(`Garbage collected ${deleteResult.deletedCount} orphaned teams.`);
+      console.log(
+        `Garbage collected ${deleteResult.deletedCount} orphaned teams.`
+      );
     }
   } catch (error) {
     // Log the error, but don't fail the main API request
-    console.error("Error during team garbage collection:", error);
+    console.error('Error during team garbage collection:', error);
   }
 }
 
-// --- Zod schema (unchanged) ---
+// --- Zod schema ---
 const swapSchema = z.object({
   matchAId: z.string(),
   playerAId: z.string(),
@@ -59,7 +61,7 @@ const swapSchema = z.object({
   playerBId: z.string(),
 });
 
-// --- UPDATED: POST handler (No transactions, but with Team logic) ---
+// --- POST handler ---
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string; roundId: string }> }
@@ -67,49 +69,37 @@ export async function POST(
   await dbConnect();
 
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const validation = await validateTournamentRequest(req, context);
+    if (!validation.ok) {
+      return validation.response;
     }
+    const { tournament } = validation;
 
-    const { id: tournamentId, roundId } = await context.params;
-
-    // --- 1. Authorize ---
-    const tournament = await Tournament.findById(tournamentId);
-    if (!tournament) {
-      return NextResponse.json(
-        { message: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-    if (tournament.ownerId.toString() !== session.user.id) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
-    // --- Get ownerId for later ---
+    const { roundId } = await context.params;
     const ownerId = tournament.ownerId;
 
     // --- 2. Validate Body ---
     const body = await req.json();
-    const validation = swapSchema.safeParse(body);
-    if (!validation.success) {
+    const bodyValidation = swapSchema.safeParse(body);
+    if (!bodyValidation.success) {
       return NextResponse.json(
-        { message: "Invalid request body", errors: validation.error.issues },
+        { message: 'Invalid request body', errors: bodyValidation.error.issues },
         { status: 400 }
       );
     }
-    const { matchAId, playerAId, matchBId, playerBId } = validation.data;
+    const { matchAId, playerAId, matchBId, playerBId } = bodyValidation.data;
 
     // --- 3. Find Matches and Participants ---
     const matchA = await Match.findById(matchAId);
-    if (!matchA) throw new Error("Match A not found.");
+    if (!matchA) throw new Error('Match A not found.');
     if (matchA.roundId.toString() !== roundId) {
-      throw new Error("Match A does not belong to this round.");
+      throw new Error('Match A does not belong to this round.');
     }
     const participantA = matchA.participants.find(
       (p: any) => p.participantId.toString() === playerAId
     );
     if (!participantA) {
-      throw new Error("Player A not found in Match A.");
+      throw new Error('Player A not found in Match A.');
     }
 
     // --- 4. Handle Team Persistence & Swap ---
@@ -117,16 +107,19 @@ export async function POST(
     // Case 1 & 2: Swapping with a player in another match (pending or bye)
     if (matchBId) {
       const matchB = await Match.findById(matchBId);
-      if (!matchB) throw new Error("Match B not found.");
+      if (!matchB) throw new Error('Match B not found.');
       if (matchB.roundId.toString() !== roundId) {
-        throw new Error("Match B does not belong to this round.");
+        throw new Error('Match B does not belong to this round.');
       }
 
       const isByeB =
-        matchB.status === "completed" && matchB.participants.length === 1;
-      if (matchA.status !== "pending" || !(matchB.status === "pending" || isByeB)) {
+        matchB.status === 'completed' && matchB.participants.length === 1;
+      if (
+        matchA.status !== 'pending' ||
+        !(matchB.status === 'pending' || isByeB)
+      ) {
         throw new Error(
-          "Swaps can only happen from a pending match to another pending match or a bye match."
+          'Swaps can only happen from a pending match to another pending match or a bye match.'
         );
       }
 
@@ -134,7 +127,7 @@ export async function POST(
         (p: any) => p.participantId.toString() === playerBId
       );
       if (!participantB) {
-        throw new Error("Player B not found in Match B.");
+        throw new Error('Player B not found in Match B.');
       }
 
       // --- 4a. Create new persistent Team for Match A's new lineup ---
@@ -152,12 +145,14 @@ export async function POST(
         const newLookupKeyA = makeTeamLookupKey(newPlayerIdsA);
 
         await Team.findOneAndUpdate(
-          { tournamentId, lookupKey: newLookupKeyA },
+          { tournamentId: tournament._id, lookupKey: newLookupKeyA },
           {
             $setOnInsert: {
-              tournamentId,
-              ownerId, // <-- FIX: Added ownerId
-              playerIds: newPlayerIdsA.map((id) => new mongoose.Types.ObjectId(id)),
+              tournamentId: tournament._id,
+              ownerId,
+              playerIds: newPlayerIdsA.map(
+                (id) => new mongoose.Types.ObjectId(id)
+              ),
               lookupKey: newLookupKeyA,
             },
           },
@@ -180,12 +175,14 @@ export async function POST(
         const newLookupKeyB = makeTeamLookupKey(newPlayerIdsB);
 
         await Team.findOneAndUpdate(
-          { tournamentId, lookupKey: newLookupKeyB },
+          { tournamentId: tournament._id, lookupKey: newLookupKeyB },
           {
             $setOnInsert: {
-              tournamentId,
-              ownerId, // <-- FIX: Added ownerId
-              playerIds: newPlayerIdsB.map((id) => new mongoose.Types.ObjectId(id)),
+              tournamentId: tournament._id,
+              ownerId, // <-- This still works
+              playerIds: newPlayerIdsB.map(
+                (id) => new mongoose.Types.ObjectId(id)
+              ),
               lookupKey: newLookupKeyB,
             },
           },
@@ -202,10 +199,8 @@ export async function POST(
     }
     // Case 3: Swapping with a player from the "Bench" (no matchBId)
     else {
-      if (matchA.status !== "pending") {
-        throw new Error(
-          "Can only swap a benched player into a pending match."
-        );
+      if (matchA.status !== 'pending') {
+        throw new Error('Can only swap a benched player into a pending match.');
       }
 
       // --- 4a. Create new persistent Team for Match A's new lineup ---
@@ -223,12 +218,14 @@ export async function POST(
         const newLookupKeyA = makeTeamLookupKey(newPlayerIdsA);
 
         await Team.findOneAndUpdate(
-          { tournamentId, lookupKey: newLookupKeyA },
+          { tournamentId: tournament._id, lookupKey: newLookupKeyA },
           {
             $setOnInsert: {
-              tournamentId,
-              ownerId, // <-- FIX: Added ownerId
-              playerIds: newPlayerIdsA.map((id) => new mongoose.Types.ObjectId(id)),
+              tournamentId: tournament._id,
+              ownerId,
+              playerIds: newPlayerIdsA.map(
+                (id) => new mongoose.Types.ObjectId(id)
+              ),
               lookupKey: newLookupKeyA,
             },
           },
@@ -241,20 +238,20 @@ export async function POST(
       await matchA.save();
     }
 
-    // --- 5. (MODIFIED) Run garbage collector AFTER swap ---
-    await runTeamGarbageCollector(tournamentId);
+    // --- 5. Run garbage collector AFTER swap ---
+    await runTeamGarbageCollector(tournament._id);
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error: any) {
-    console.error("Error swapping participants:", error);
+    console.error('Error swapping participants:', error);
     return NextResponse.json(
-      { message: error.message || "Internal Server Error" },
+      { message: error.message || 'Internal Server Error' },
       { status: 500 }
     );
   }
 }
 
-// --- (MODIFIED) DELETE Handler with Team Cleanup ---
+// --- DELETE Handler with Team Cleanup ---
 export async function DELETE(
   req: NextRequest,
   context: { params: Promise<{ id: string; roundId: string }> }
@@ -262,32 +259,19 @@ export async function DELETE(
   await dbConnect();
 
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const validation = await validateTournamentRequest(req, context);
+    if (!validation.ok) {
+      return validation.response;
     }
+    const { tournament } = validation;
 
-    const { id, roundId } = await context.params;
+    const { roundId } = await context.params;
 
-    if (
-      !mongoose.Types.ObjectId.isValid(id) ||
-      !mongoose.Types.ObjectId.isValid(roundId)
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(roundId)) {
       return NextResponse.json(
-        { message: "Invalid id or roundId" },
+        { message: 'Invalid roundId' },
         { status: 400 }
       );
-    }
-
-    const tournament = await Tournament.findById(id);
-    if (!tournament) {
-      return NextResponse.json(
-        { message: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-    if (tournament.ownerId.toString() !== session.user.id) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
 
     const round = await Round.findOne({
@@ -296,7 +280,7 @@ export async function DELETE(
     });
     if (!round) {
       return NextResponse.json(
-        { message: "Round not found" },
+        { message: 'Round not found' },
         { status: 404 }
       );
     }
@@ -315,7 +299,7 @@ export async function DELETE(
     // Delete the round itself
     await Round.deleteOne({ _id: round._id });
 
-    // --- (MODIFIED) Run garbage collector AFTER delete ---
+    // --- Run garbage collector AFTER delete ---
     await runTeamGarbageCollector(tournament._id);
 
     // --- Recalculation (as before) ---
@@ -323,19 +307,19 @@ export async function DELETE(
     const baseUrl = `${url.protocol}//${url.host}`;
     const recalculateUrl = `${baseUrl}/api/tournaments/${tournament._id}/recalculate`;
     const headers = {
-      Cookie: req.headers.get("cookie") || "",
+      Cookie: req.headers.get('cookie') || '',
     };
-    const recalcRes = await fetch(recalculateUrl, { method: "POST", headers });
+    const recalcRes = await fetch(recalculateUrl, { method: 'POST', headers });
 
     if (!recalcRes.ok) {
-      console.error("Failed to trigger recalculation after round delete.");
+      console.error('Failed to trigger recalculation after round delete.');
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error("Error deleting round:", error);
+    console.error('Error deleting round:', error);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { message: 'Internal Server Error' },
       { status: 500 }
     );
   }

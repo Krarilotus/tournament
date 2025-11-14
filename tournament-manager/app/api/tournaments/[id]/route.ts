@@ -1,65 +1,53 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { auth } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Tournament from '@/lib/models/Tournament';
 import { revalidatePath } from 'next/cache';
-
-// --- Helper function to verify ownership ---
-async function verifyOwner(tournamentId: string, userId: string) {
-  await dbConnect();
-  console.log(`[verifyOwner] Checking for ID: ${tournamentId}`);
-  
-  if (!tournamentId) {
-    throw new Error('Tournament ID is undefined.');
-  }
-
-  const tournament = await Tournament.findById(tournamentId);
-  
-  if (!tournament) {
-    throw new Error('Tournament not found');
-  }
-  
-  if (tournament.ownerId.toString() !== userId) {
-    throw new Error('Forbidden');
-  }
-  
-  return tournament;
-}
+import { validateTournamentRequest } from '@/lib/api/requestUtils';
 
 // --- Custom Error Handler ---
+// This can still be useful for errors *after* validation
 function handleError(error: any) {
   console.error(error);
   if (error.message === 'Tournament not found') {
-    return new NextResponse(JSON.stringify({ error: 'Not Found' }), { status: 404 });
+    return new NextResponse(JSON.stringify({ error: 'Not Found' }), {
+      status: 404,
+    });
   }
   if (error.message === 'Forbidden') {
-    return new NextResponse(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
+    return new NextResponse(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+    });
   }
   if (error.message === 'Tournament ID is undefined.') {
-    return new NextResponse(JSON.stringify({ error: 'Server failed to read tournament ID from URL.' }), { status: 500 });
+    return new NextResponse(
+      JSON.stringify({
+        error: 'Server failed to read tournament ID from URL.',
+      }),
+      { status: 500 }
+    );
   }
-  return new NextResponse(JSON.stringify({ error: 'Server error' }), { status: 500 });
+  return new NextResponse(JSON.stringify({ error: 'Server error' }), {
+    status: 500,
+  });
 }
 
 // --- CORRECT CONTEXT TYPE ---
 type Context = {
-  params: Promise<{ id: string }>
+  params: Promise<{ id: string }>;
 };
 
 // --- GET a single tournament ---
 export async function GET(request: NextRequest, context: Context) {
   try {
-    const params = await context.params;
-    const id = params.id;
-    console.log(`[GET] /api/tournaments/${id}`);
-
-    const session = await auth();
-    if (!session?.user?.id) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    await dbConnect(); // Ensure DB is connected
+    const validation = await validateTournamentRequest(request, context);
+    if (!validation.ok) {
+      return validation.response;
     }
-    
-    const tournament = await verifyOwner(id, session.user.id);
-    
+    const { tournament } = validation;
+
+    console.log(`[GET] /api/tournaments/${tournament._id}`);
+
     const flatTournamentData = {
       name: tournament.name,
       description: tournament.description,
@@ -72,9 +60,8 @@ export async function GET(request: NextRequest, context: Context) {
         participantsLayout: tournament.settings.participantsLayout || null,
       },
     };
-    
-    return NextResponse.json(flatTournamentData);
 
+    return NextResponse.json(flatTournamentData);
   } catch (error: any) {
     return handleError(error);
   }
@@ -83,29 +70,27 @@ export async function GET(request: NextRequest, context: Context) {
 // --- PUT (Update) a tournament ---
 export async function PUT(request: NextRequest, context: Context) {
   try {
-    const params = await context.params;
-    const id = params.id;
-    
-    console.log(`[PUT] /api/tournaments/${id}`);
-
-    const session = await auth();
-    if (!session?.user?.id) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    await dbConnect(); // Ensure DB is connected
+    const validation = await validateTournamentRequest(request, context);
+    if (!validation.ok) {
+      return validation.response;
     }
+    const { tournament } = validation;
 
-    const tournament = await verifyOwner(id, session.user.id);
+    console.log(`[PUT] /api/tournaments/${tournament._id}`);
+
     const body = await request.json();
-    
+
     if (body.name) tournament.name = body.name;
     if (body.description) tournament.description = body.description;
 
     if (body.settings) {
       const s = body.settings;
-    
+
       if (s.pointsWin !== undefined) {
-        tournament.settings.pointSystem.set("win", s.pointsWin);
-        tournament.settings.pointSystem.set("draw", s.pointsDraw);
-        tournament.settings.pointSystem.set("loss", s.pointsLoss);
+        tournament.settings.pointSystem.set('win', s.pointsWin);
+        tournament.settings.pointSystem.set('draw', s.pointsDraw);
+        tournament.settings.pointSystem.set('loss', s.pointsLoss);
       }
       if (s.customStats !== undefined) {
         tournament.settings.customStats = s.customStats;
@@ -117,12 +102,11 @@ export async function PUT(request: NextRequest, context: Context) {
         tournament.settings.participantsLayout = s.participantsLayout;
       }
     }
-    
+
     await tournament.save();
     revalidatePath('/dashboard');
-    revalidatePath(`/dashboard/${params.id}/settings`);
+    revalidatePath(`/dashboard/${tournament._id}/settings`);
     return NextResponse.json(tournament);
-
   } catch (error: any) {
     return handleError(error);
   }
@@ -131,23 +115,19 @@ export async function PUT(request: NextRequest, context: Context) {
 // --- DELETE a tournament ---
 export async function DELETE(request: NextRequest, context: Context) {
   try {
-    // --- THIS IS THE FIX ---
-    const params = await context.params;
-    const id = params.id;
-    // --- END OF FIX ---
+    await dbConnect(); // Ensure DB is connected
+    const validation = await validateTournamentRequest(request, context);
+    if (!validation.ok) {
+      return validation.response;
+    }
+    const { tournament } = validation;
 
+    const id = tournament._id; // Get ID from validated tournament
     console.log(`[DELETE] /api/tournaments/${id}`);
 
-    const session = await auth();
-    if (!session?.user?.id) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-    }
-
-    await verifyOwner(id, session.user.id);
     await Tournament.findByIdAndDelete(id);
     revalidatePath('/dashboard');
     return new NextResponse(null, { status: 204 });
-
   } catch (error: any) {
     return handleError(error);
   }

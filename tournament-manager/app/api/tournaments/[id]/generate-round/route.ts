@@ -1,18 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
-import dbConnect from "@/lib/db";
-import { auth } from "@/lib/auth";
-import Tournament from "@/lib/models/Tournament";
+import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import dbConnect from '@/lib/db';
+import Tournament from '@/lib/models/Tournament';
 import Participant, {
   SerializedParticipant,
-} from "@/lib/models/Participant";
-import Round, { IRound } from "@/lib/models/Round";
-import Match from "@/lib/models/Match";
-import { revalidatePath } from "next/cache";
-import { generateRoundBodySchema } from "@/lib/validators";
-import { buildNextRound } from "@/lib/matchmaking/buildRound";
-import { SerializedMatch } from "@/lib/types";
-import { getStandings } from "@/lib/standings/getStandings";
+} from '@/lib/models/Participant';
+import Round, { IRound } from '@/lib/models/Round';
+import Match from '@/lib/models/Match';
+import { revalidatePath } from 'next/cache';
+import { generateRoundBodySchema } from '@/lib/validators';
+import { buildNextRound } from '@/lib/matchmaking/buildRound';
+import { SerializedMatch } from '@/lib/types';
+import { getStandings } from '@/lib/standings/getStandings';
+import { validateTournamentRequest } from '@/lib/api/requestUtils';
 
 type RoundSummary = {
   _id: string;
@@ -25,74 +25,53 @@ export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  // We can connect once at the top
   await dbConnect();
 
   try {
-    // 1. Auth, params, body
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const validation = await validateTournamentRequest(req, context);
+    if (!validation.ok) {
+      return validation.response;
     }
+    const { tournament, session, userId } = validation;
+    const tournamentId = tournament._id.toString();
 
-    const params = await context.params;
-    const { id: tournamentId } = params;
-
-    if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
-      return NextResponse.json(
-        { message: "Invalid Tournament ID" },
-        { status: 400 }
-      );
-    }
-
+    // 2. Validate Body (comes *after* auth)
     const body = await req.json();
-    const validation = generateRoundBodySchema.safeParse(body);
+    const bodyValidation = generateRoundBodySchema.safeParse(body);
 
-    if (!validation.success) {
+    if (!bodyValidation.success) {
       return NextResponse.json(
         {
-          message: "Invalid request body",
-          errors: validation.error.format(),
+          message: 'Invalid request body',
+          errors: bodyValidation.error.format(),
         },
         { status: 400 }
       );
     }
 
-    const config = validation.data;
-
-    // 2. Tournament + ownership
-    const tournament = await Tournament.findById(tournamentId);
-    if (!tournament) {
-      return NextResponse.json(
-        { message: "Tournament not found" },
-        { status: 404 }
-      );
-    }
-    if (tournament.ownerId.toString() !== session.user.id) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
+    const config = bodyValidation.data;
 
     const currentRoundNumber = tournament.rounds.length + 1;
 
-    // 3. Active participants (standings input)
-    // For custom, this list might be empty or incomplete, which is fine.
-    // For other systems, buildNextRound will handle < 1.
+    // 4. Active participants (standings input)
     const standings = await getStandings(
       tournament._id.toString(),
       tournament.settings.tieBreakers || [],
       true // Active only
     );
 
-    if (config.system !== "custom" && standings.length < 1) {
+    if (config.system !== 'custom' && standings.length < 1) {
       return NextResponse.json(
-        { message: "Not enough active participants." },
+        { message: 'Not enough active participants.' },
         { status: 400 }
       );
     }
 
-    // 4. All matches for context (rematches, byes, etc.)
+    // 5. All matches for context (rematches, byes, etc.)
     const allMatchesDocs = await Match.find({
       tournamentId: tournament._id,
-      status: { $in: ["pending", "completed"] },
+      status: { $in: ['pending', 'completed'] },
     });
 
     const allMatches: SerializedMatch[] = allMatchesDocs.map((m: any) => ({
@@ -116,7 +95,7 @@ export async function POST(
         : undefined,
     }));
 
-    // 5. Rounds summary (for teamPersistence and advanced rematch logic)
+    // 6. Rounds summary (for teamPersistence and advanced rematch logic)
     const roundDocs: IRound[] = await Round.find({
       tournamentId: tournament._id,
     }).sort({
@@ -130,7 +109,7 @@ export async function POST(
       status: r.status,
     }));
 
-    // 6. Normalise point system
+    // 7. Normalise point system
     const pointSystem =
       tournament.settings?.pointSystem instanceof Map
         ? (tournament.settings.pointSystem as Map<string, number>)
@@ -141,7 +120,7 @@ export async function POST(
             )
           );
 
-    // 7. Let the logic engine build the next round
+    // 8. Let the logic engine build the next round
     const { matchSeeds } = await buildNextRound({
       config,
       standings,
@@ -149,19 +128,19 @@ export async function POST(
       rounds,
       pointSystem,
       tournamentId: tournament._id.toString(),
-      ownerId: session.user.id,
+      ownerId: userId,
     });
 
     if (matchSeeds.length === 0) {
       return NextResponse.json(
-        { message: "No matches generated. Not enough active players." },
+        { message: 'No matches generated. Not enough active players.' },
         { status: 400 }
       );
     }
 
-    // 8. Create Round with per-round settings (FFA scoring stored here)
+    // 9. Create Round with per-round settings (FFA scoring stored here)
     let ffaPlacements: Map<string, number> | undefined = undefined;
-    if (config.system === "n-ffa") {
+    if (config.system === 'n-ffa') {
       const placementsMap = new Map<string, number>();
       // This is type-safe because TS knows config is 'n-ffa' here
       const src = config.options.ffaPlacements || {};
@@ -175,13 +154,13 @@ export async function POST(
       tournamentId: tournament._id,
       roundNumber: currentRoundNumber,
       system: config.system,
-      status: "pending",
-      systemOptions: config.system === "custom" ? undefined : config.options,
+      status: 'pending',
+      systemOptions: config.system === 'custom' ? undefined : config.options,
       pointSystem,
       ffaPlacements,
     });
 
-    // 9. Create Match docs from seeds
+    // 10. Create Match docs from seeds
     const matchesToCreate = matchSeeds.map((seed) => ({
       tournamentId: tournament._id,
       roundId: newRound._id,
@@ -206,14 +185,14 @@ export async function POST(
       $push: { rounds: newRound._id },
     });
 
-    // 10. Revalidate & return
+    // 11. Revalidate & return
     revalidatePath(`/dashboard/${tournamentId}/rounds`);
 
     return NextResponse.json(newRound, { status: 201 });
   } catch (error) {
-    console.error("Error generating round:", error);
+    console.error('Error generating round:', error);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { message: 'Internal Server Error' },
       { status: 500 }
     );
   }

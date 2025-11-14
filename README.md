@@ -41,6 +41,7 @@ An implementation for creating online, team-based tournaments. This application 
 * **Database:** MongoDB (with Mongoose)
 * **Orchestration:** Docker (for local `local-mongo` database)
 * **Authentication:** Auth.js (NextAuth v5)
+* **Email:** Resend
 * **UI:** Tailwind CSS & **shadcn/ui**
 * **State Management:** `useSWR` (client-side fetching) & `React.useState`
 * **Validation:** Zod
@@ -48,7 +49,7 @@ An implementation for creating online, team-based tournaments. This application 
 
 ---
 
-## Getting Started
+## Getting Started (Local Development)
 
 Follow these steps to get your local development environment up and running.
 
@@ -56,7 +57,7 @@ Follow these steps to get your local development environment up and running.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/tournament.git
+git clone [https://github.com/your-username/tournament.git](https://github.com/your-username/tournament.git)
 cd tournament
 
 # Install dependencies
@@ -76,7 +77,7 @@ Now, open `.env.local` and fill in the required values:
 * `MONGODB_URI` (e.g., `mongodb://localhost:27017/tournament_dev`)
 * `AUTH_SECRET` (Generate a strong secret, e.g., `openssl rand -hex 32`)
 * `AUTH_URL` (e.g., `http://localhost:3000`)
-* `SMTP_` values (for Ethereal or another email service)
+* `RESEND_API_KEY` (Your API-Schlüssel von Resend)
 
 ### 3. Run the MongoDB Database
 
@@ -112,6 +113,54 @@ Your application is now running.
 
 * **Main Site:** Open [http://localhost:3000](http://localhost:3000)
 * **Test Workflow:** Register at `/register`, click the verification link, and log in to access the `/dashboard`.
+
+---
+
+## Production Deployment (Self-Hosting)
+
+This project is configured for deployment on a private Linux-Server (z.B. Ubuntu) mit Nginx als Reverse Proxy.
+
+### 1. Erforderliche Umgebungsvariablen
+
+Für die Produktion muss eine `.env.local`-Datei auf dem Server im Projekt-Root erstellt werden:
+
+```ini
+# Node-Umgebung
+NODE_ENV=production
+
+# Datenbank (Beispiel für MongoDB auf demselben Server)
+DATABASE_URL="mongodb://tournament_user:DEIN_PASSWORT@localhost:27017/tournament_app?authSource=admin"
+
+# NextAuth Konfiguration
+# Generieren Sie einen sicheren Secret mit: openssl rand -base64 32
+AUTH_SECRET="DEIN_AUTH_SECRET"
+AUTH_URL="[http://tournament.unofficialcrusaderpatch.com](http://tournament.unofficialcrusaderpatch.com)" # Ihre finale Domain
+
+# Resend (E-Mail)
+RESEND_API_KEY="re_DEIN_RESEND_KEY"
+```
+
+### 2. Build & Start
+
+1.  **Build:** Erstellt die optimierte Produktionsversion der App.
+    ```bash
+    npm run build
+    ```
+
+2.  **Start:** Startet den Next.js-Server (standardmäßig auf Port 3000).
+    ```bash
+    npm run start
+    ```
+
+Es wird dringend empfohlen, einen Prozessmanager wie `pm2` zu verwenden, um die App im Hintergrund laufen zu lassen und bei Abstürzen automatisch neu zu starten.
+
+```bash
+# pm2 global installieren
+npm install -g pm2
+
+# Die App mit pm2 starten
+pm2 start npm --name "tournament-app" -- start
+```
 
 ---
 
