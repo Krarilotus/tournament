@@ -5,7 +5,7 @@ import dbConnect from '@/lib/db';
 import Tournament from '@/lib/models/Tournament';
 import Team from '@/lib/models/Team';
 import '@/lib/models/Participant';
-import { validateTournamentRequest } from '@/lib/api/requestUtils'; // <-- IMPORTED
+import { validatePublicAccess } from '@/lib/api/requestUtils'; // <-- THE FIX
 
 export async function GET(
   req: NextRequest,
@@ -14,7 +14,7 @@ export async function GET(
   await dbConnect();
 
   try {
-    const validation = await validateTournamentRequest(req, context);
+    const validation = await validatePublicAccess(req, context); // <-- THE FIX
     if (!validation.ok) {
       return validation.response;
     }

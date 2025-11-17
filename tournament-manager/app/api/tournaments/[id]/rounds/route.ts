@@ -5,7 +5,7 @@ import Tournament from '@/lib/models/Tournament';
 import Round from '@/lib/models/Round';
 import '@/lib/models/Match'; // Ensure Match model is registered
 import '@/lib/models/Participant'; // Ensure Participant model is registered
-import { validateTournamentRequest } from '@/lib/api/requestUtils'; 
+import { validatePublicAccess } from '@/lib/api/requestUtils';
 
 export async function GET(
   req: NextRequest,
@@ -14,7 +14,7 @@ export async function GET(
   await dbConnect();
 
   try {
-    const validation = await validateTournamentRequest(req, context);
+    const validation = await validatePublicAccess(req, context);
     if (!validation.ok) {
       return validation.response;
     }

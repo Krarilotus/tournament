@@ -28,6 +28,16 @@ type ValidatedBaseRequest = {
   userId: string;
 };
 
+// --- (NEW) Public Request Type ---
+// A session is optional for public requests
+type ValidatedPublicRequest = {
+  ok: true;
+  tournament: ITournament;
+  session: Session | null;
+  tieBreakers: string[];
+  scoreKeys: string[];
+};
+
 const BUILTIN_TIEBREAKERS = new Set<string>([
   'points',
   'wins',
@@ -223,6 +233,85 @@ export async function validateTournamentRequest(
     tournament,
     session,
     userId,
+    tieBreakers,
+    scoreKeys,
+  };
+}
+
+/**
+ * (NEW) Validates a request for PUBLIC or ADMIN access.
+ * If tournament is "published", allows public (no session) access.
+ * If tournament is "draft", falls back to admin-only access.
+ */
+export async function validatePublicAccess(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<ValidatedPublicRequest | ErrorRequest> {
+  await dbConnect();
+
+  // 1. Get session, but it's optional
+  const session = await auth();
+
+  // 2. Get Tournament
+  const params = await context.params;
+  const { id: tournamentId } = params;
+
+  if (!mongoose.Types.ObjectId.isValid(tournamentId)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { message: 'Invalid Tournament ID' },
+        { status: 400 }
+      ),
+    };
+  }
+
+  const tournament = await Tournament.findById(tournamentId);
+
+  if (!tournament) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { message: 'Tournament not found' },
+        { status: 404 }
+      ),
+    };
+  }
+
+  // 3. Check permissions
+  const isPublished = tournament.status === 'published';
+
+  if (!isPublished) {
+    // If not published, MUST be an admin.
+    const adminAccessError = checkAdminAccess(tournament, session);
+    if (adminAccessError) {
+      return { ok: false, response: adminAccessError };
+    }
+  }
+  // If it IS published, we allow access (session can be null).
+
+  // 4. Validate and return tie-breakers (same as admin logic)
+  const tieBreakers: string[] = tournament.settings.tieBreakers || ['points'];
+  const customStats: string[] = tournament.settings.customStats || [];
+
+  for (const tb of tieBreakers) {
+    if (BUILTIN_TIEBREAKERS.has(tb)) continue;
+    if (!customStats.includes(tb)) {
+      const message = `Invalid tie-breaker "${tb}". It is not a built-in stat and not defined as a custom stat for this tournament.`;
+      console.error(message, { tournamentId: tournament._id });
+      return {
+        ok: false,
+        response: NextResponse.json({ message }, { status: 500 }),
+      };
+    }
+  }
+
+  const scoreKeys = tieBreakers.filter((tb) => tb !== 'directComparison');
+
+  return {
+    ok: true,
+    tournament,
+    session, // (can be null)
     tieBreakers,
     scoreKeys,
   };

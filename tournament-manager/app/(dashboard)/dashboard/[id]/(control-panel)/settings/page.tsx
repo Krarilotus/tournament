@@ -75,10 +75,12 @@ export default function TournamentSettingsPage(props: {
 
     const fetchTournament = async () => {
       try {
-        const res = await fetch(`/api/tournaments/${params.id}`);
+        const res = await fetch(`/api/tournaments/${params.id}`, {
+          cache: "no-store", // <-- THE FIX
+        });
         if (!res.ok) {
-           // Handle 403 Forbidden specifically if needed
-           if (res.status === 403) {
+          // Handle 403 Forbidden specifically if needed
+          if (res.status === 403) {
             toast.error("You don't have permission to view these settings.");
             // Optionally redirect
             // router.push("/dashboard");
@@ -162,9 +164,11 @@ export default function TournamentSettingsPage(props: {
       });
 
       if (!res.ok) {
-         const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null);
         if (res.status === 403) {
-          throw new Error(data?.message || "Forbidden: You do not have permission to edit.");
+          throw new Error(
+            data?.message || "Forbidden: You do not have permission to edit."
+          );
         }
         throw new Error(data?.message || "Failed to update tournament");
       }
@@ -190,8 +194,10 @@ export default function TournamentSettingsPage(props: {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-         if (res.status === 403) {
-          throw new Error(data?.message || "Forbidden: You do not have permission.");
+        if (res.status === 403) {
+          throw new Error(
+            data?.message || "Forbidden: You do not have permission."
+          );
         }
         throw new Error(data?.message || "Failed to update publish status");
       }
@@ -328,8 +334,8 @@ export default function TournamentSettingsPage(props: {
           ) : (
             <p className="text-sm text-muted-foreground">
               This tournament is currently private. When you publish it, a
-              unique URL will be generated that anyone can view in
-              read-only mode.
+              unique URL will be generated that anyone can view in read-only
+              mode.
             </p>
           )}
         </CardContent>

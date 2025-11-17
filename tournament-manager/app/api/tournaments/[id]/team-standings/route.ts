@@ -1,14 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
-import Match from "@/lib/models/Match";
-import { SerializedParticipant } from "@/lib/models/Participant";
-import Team from "@/lib/models/Team";
-import { alphaCode, makeTeamLookupKey } from "@/lib/utils";
-import { reconstructTeamsFromMatches } from "@/lib/matchmaking/core/teamBuilding";
-import type { TeamEntity } from "@/lib/matchmaking/types";
-import { SerializedMatch } from "@/lib/types";
-import { getStandings } from "@/lib/standings/getStandings";
-import { validateTournamentRequest } from "@/lib/api/requestUtils";
+import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import Match from '@/lib/models/Match';
+import { SerializedParticipant } from '@/lib/models/Participant';
+import Team from '@/lib/models/Team';
+import { alphaCode, makeTeamLookupKey } from '@/lib/utils';
+import { reconstructTeamsFromMatches } from '@/lib/matchmaking/core/teamBuilding';
+import type { TeamEntity } from '@/lib/matchmaking/types';
+import { SerializedMatch } from '@/lib/types';
+import { getStandings } from '@/lib/standings/getStandings';
+import { validatePublicAccess } from '@/lib/api/requestUtils'; // <-- THE FIX
 
 // The type this specific API route returns to the client
 type ClientTeamStanding = {
@@ -30,16 +30,16 @@ export async function GET(
 ) {
   try {
     // 1. Validate request
-    const validation = await validateTournamentRequest(req, context);
+    const validation = await validatePublicAccess(req, context); // <-- THE FIX
     if (!validation.ok) return validation.response;
     const { tournament, tieBreakers, scoreKeys } = validation;
 
     const searchParams = new URL(req.url).searchParams;
-    const seedRoundId = searchParams.get("seedRoundId");
+    const seedRoundId = searchParams.get('seedRoundId');
 
     if (!seedRoundId || !mongoose.Types.ObjectId.isValid(seedRoundId)) {
       return NextResponse.json(
-        { message: "seedRoundId query param is required" },
+        { message: 'seedRoundId query param is required' },
         { status: 400 }
       );
     }
@@ -48,7 +48,7 @@ export async function GET(
     const matchesInSeedRound = await Match.find({
       tournamentId: tournament._id,
       roundId: seedRoundId,
-      "participants.team": { $exists: true, $ne: null },
+      'participants.team': { $exists: true, $ne: null },
     });
 
     if (matchesInSeedRound.length === 0) {
@@ -111,7 +111,7 @@ export async function GET(
 
     // 5. Format for the client
     const standings: ClientTeamStanding[] = teamEntities.map((team, idx) => {
-      const playersInTeam: ClientTeamStanding["players"] = [];
+      const playersInTeam: ClientTeamStanding['players'] = [];
       const accumulatedScores: Record<string, number> = {};
       for (const key of scoreKeys) {
         accumulatedScores[key] = 0;
@@ -162,9 +162,9 @@ export async function GET(
 
     return NextResponse.json<ClientTeamStanding[]>(standings, { status: 200 });
   } catch (err) {
-    console.error("Error getting team standings:", err);
+    console.error('Error getting team standings:', err);
     return NextResponse.json(
-      { message: "Internal Server Error" },
+      { message: 'Internal Server Error' },
       { status: 500 }
     );
   }
