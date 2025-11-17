@@ -51,6 +51,11 @@ export async function GET(request: NextRequest, context: Context) {
     const flatTournamentData = {
       name: tournament.name,
       description: tournament.description,
+      // --- (FIX) ---
+      // Add the missing fields
+      status: tournament.status,
+      urlSlug: tournament.urlSlug,
+      // --- (END FIX) ---
       settings: {
         pointsWin: tournament.settings.pointSystem.get('win') || 0,
         pointsDraw: tournament.settings.pointSystem.get('draw') || 0,

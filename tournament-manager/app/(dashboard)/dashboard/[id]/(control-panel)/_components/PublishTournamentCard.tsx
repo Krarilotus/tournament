@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Card,
@@ -12,135 +13,149 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Globe, Copy, Check, Loader2, ZapOff } from "lucide-react";
-import { ITournament } from "@/lib/models/Tournament"; // Import your main interface
+import { Badge } from "@/components/ui/badge";
+import { Copy, Loader2 } from "lucide-react";
+import { ITournament } from "@/lib/models/Tournament";
 
-// This helper gets the base URL (e.g., http://localhost:3000)
-function getBaseUrl() {
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-  // Fallback for server-side (though this component is client-side)
-  return "https://tournament.unofficialcrusaderpatch.com";
-}
-
-// We need to get the tournament data that was loaded by the server
 type PublishCardProps = {
-  tournament: {
-    _id: string;
-    status: ITournament["status"];
-    urlSlug?: string | null;
-  };
+  tournamentId: string;
+  initialStatus: ITournament["status"];
+  initialSlug: string | null | undefined;
+  origin: string; // Pass origin as a prop
 };
 
-export function PublishTournamentCard({ tournament }: PublishCardProps) {
+export function PublishTournamentCard({
+  tournamentId,
+  initialStatus,
+  initialSlug,
+  origin,
+}: PublishCardProps) {
   const router = useRouter();
-  const [status, setStatus] = useState(tournament.status);
-  const [slug, setSlug] = useState(tournament.urlSlug);
-  const [isLoading, setIsLoading] = useState(false);
-  const [didCopy, setDidCopy] = useState(false);
+  const [status, setStatus] = useState(initialStatus);
+  const [slug, setSlug] = useState(initialSlug);
+  const [isPublishing, setIsPublishing] = useState(false);
 
-  const publicUrl = `${getBaseUrl()}/${slug}`;
-  const isPublished = status !== "draft";
+  const isPublished = status === "published";
+  const publicUrl = slug && origin ? `${origin}/${slug}` : "";
 
-  const handlePublish = async (publish: boolean) => {
-    setIsLoading(true);
+  const handlePublishToggle = async (nextPublish: boolean) => {
+    if (!tournamentId) return;
+
+    setIsPublishing(true);
     try {
-      const res = await fetch(`/api/tournaments/${tournament._id}/publish`, {
+      const res = await fetch(`/api/tournaments/${tournamentId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publish }),
+        body: JSON.stringify({ publish: nextPublish }),
       });
 
       if (!res.ok) {
-        throw new Error(
-          publish ? "Failed to publish" : "Failed to unpublish"
-        );
+        const data = await res.json().catch(() => null);
+        if (res.status === 403) {
+          throw new Error(
+            data?.message || "Forbidden: You do not have permission."
+          );
+        }
+        throw new Error(data?.message || "Failed to update publish status");
       }
+
       const data = await res.json();
       setStatus(data.status);
-      setSlug(data.urlSlug);
+      setSlug(data.urlSlug ?? null);
 
       toast.success(
-        publish ? "Tournament published!" : "Tournament unpublished."
+        nextPublish
+          ? "Tournament published. Public link is ready."
+          : "Tournament set back to draft."
       );
       router.refresh();
     } catch (error: any) {
-      toast.error(error.message);
+      console.error(error);
+      toast.error(error.message || "Could not change publish status.");
     } finally {
-      setIsLoading(false);
+      setIsPublishing(false);
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(publicUrl).then(() => {
-      setDidCopy(true);
-      setTimeout(() => setDidCopy(false), 2000);
-    });
+  const handleCopyPublicUrl = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      toast.success("Public URL copied to clipboard.");
+    } catch {
+      toast.error("Could not copy URL. You can copy it manually.");
+    }
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Public Tournament Page</CardTitle>
-        <CardDescription>
-          {isPublished
-            ? "Your tournament is live. Share the link below."
-            : "Publish your tournament to get a shareable, read-only link."}
-        </CardDescription>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <CardTitle>Publish & Share</CardTitle>
+            <CardDescription>
+              Make this tournament viewable at a public URL.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={isPublished ? "default" : "secondary"}
+              className="text-xs capitalize"
+            >
+              {isPublished ? "Published" : "Draft"}
+            </Badge>
+            <Button
+              type="button"
+              variant={isPublished ? "outline" : "default"}
+              onClick={() => handlePublishToggle(!isPublished)}
+              disabled={isPublishing}
+            >
+              {isPublishing && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isPublished ? "Unpublish" : "Publish"}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {isPublished ? (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="public-url">Your Public URL</Label>
-              <div className="flex gap-2">
-                <Input id="public-url" value={publicUrl} readOnly />
-                <Button variant="outline" size="icon" onClick={handleCopy}>
-                  {didCopy ? (
-                    <Check className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
+            <p className="text-sm text-muted-foreground">
+              This tournament is live. Share the public link below:
+            </p>
+            {slug && (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  readOnly
+                  value={publicUrl}
+                  className="font-mono text-xs"
+                />
+                <div className="flex gap-2 mt-2 sm:mt-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyPublicUrl}
+                  >
+                    <Copy className="mr-1 h-3 w-3" />
+                    Copy
+                  </Button>
+                  <Button asChild variant="secondary" size="sm">
+                    <Link href={`/${slug}`} target="_blank">
+                      Open
+                    </Link>
+                  </Button>
+                </div>
               </div>
-            </div>
-            <Button
-              variant="destructive"
-              onClick={() => handlePublish(false)}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ZapOff className="mr-2 h-4 w-4" />
-              )}
-              Unpublish Tournament
-            </Button>
+            )}
           </>
         ) : (
-          <Button onClick={() => handlePublish(true)} disabled={isLoading}>
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Globe className="mr-2 h-4 w-4" />
-            )}
-            Publish to Public
-          </Button>
+          <p className="text-sm text-muted-foreground">
+            This tournament is currently private. When you publish it, a unique
+            URL will be generated that anyone can view in read-only mode.
+          </p>
         )}
-        <Alert>
-          <Globe className="h-4 w-4" />
-          <AlertTitle>
-            {isPublished ? "Your tournament is visible" : "Your tournament is private"}
-          </AlertTitle>
-          <AlertDescription>
-            {isPublished
-              ? "Anyone with the link can view standings and match results."
-              : "Only you (and co-admins) can see this tournament."}
-          </AlertDescription>
-        </Alert>
       </CardContent>
     </Card>
   );

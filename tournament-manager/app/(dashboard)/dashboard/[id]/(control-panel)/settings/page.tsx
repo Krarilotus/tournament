@@ -27,10 +27,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2, Download, Copy, ArrowLeft } from "lucide-react";
+import { X, Loader2, Download, ArrowLeft } from "lucide-react";
 import React, { useEffect, useState, use } from "react";
 import { TieBreakerDnd } from "../_components/TieBreakerDnd";
 import { ManageAdminsCard } from "../_components/ManageAdminsCard";
+import { PublishTournamentCard } from "../_components/PublishTournamentCard";
+import { ITournament } from "@/lib/models/Tournament";
 
 export type UpdateTournamentForm = z.infer<typeof updateTournamentSchema>;
 
@@ -44,9 +46,8 @@ export default function TournamentSettingsPage(props: {
   const [statInput, setStatInput] = useState("");
 
   // publish-related state
-  const [publishStatus, setPublishStatus] = useState<string>("draft");
+  const [publishStatus, setPublishStatus] = useState<ITournament["status"]>("draft");
   const [urlSlug, setUrlSlug] = useState<string | null>(null);
-  const [isPublishing, setIsPublishing] = useState(false);
   const [origin, setOrigin] = useState("");
 
   useEffect(() => {
@@ -75,15 +76,18 @@ export default function TournamentSettingsPage(props: {
 
     const fetchTournament = async () => {
       try {
-        const res = await fetch(`/api/tournaments/${params.id}`, {
-          cache: "no-store", // <-- THE FIX
-        });
+        // --- 4. THE CACHE BUG FIX ---
+        const res = await fetch(
+          `/api/tournaments/${params.id}?_t=${new Date().getTime()}`,
+          {
+            cache: "no-store",
+          }
+        );
+        // --- END FIX ---
+
         if (!res.ok) {
-          // Handle 403 Forbidden specifically if needed
           if (res.status === 403) {
             toast.error("You don't have permission to view these settings.");
-            // Optionally redirect
-            // router.push("/dashboard");
           }
           throw new Error("Failed to fetch tournament");
         }
@@ -117,7 +121,7 @@ export default function TournamentSettingsPage(props: {
       }
     };
     fetchTournament();
-  }, [params.id, form, router]); // Added router to dep array
+  }, [params.id, form, router]);
 
   const handleAddStat = () => {
     if (statInput.trim()) {
@@ -181,55 +185,8 @@ export default function TournamentSettingsPage(props: {
     }
   };
 
-  const handlePublishToggle = async (nextPublish: boolean) => {
-    if (!params.id) return;
-
-    setIsPublishing(true);
-    try {
-      const res = await fetch(`/api/tournaments/${params.id}/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publish: nextPublish }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        if (res.status === 403) {
-          throw new Error(
-            data?.message || "Forbidden: You do not have permission."
-          );
-        }
-        throw new Error(data?.message || "Failed to update publish status");
-      }
-
-      const data = await res.json();
-      setPublishStatus(data.status);
-      setUrlSlug(data.urlSlug ?? null);
-
-      toast.success(
-        nextPublish
-          ? "Tournament published. Public link is ready."
-          : "Tournament set back to draft."
-      );
-      router.refresh();
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error.message || "Could not change publish status.");
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const handleCopyPublicUrl = async () => {
-    if (!origin || !urlSlug) return;
-    const url = `${origin}/${urlSlug}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Public URL copied to clipboard.");
-    } catch {
-      toast.error("Could not copy URL. You can copy it manually.");
-    }
-  };
+  // --- 5. REMOVED handlePublishToggle and handleCopyPublicUrl ---
+  // (This logic is now in the component)
 
   if (isLoading) {
     return (
@@ -240,12 +197,9 @@ export default function TournamentSettingsPage(props: {
     );
   }
 
-  const isPublished = publishStatus === "published";
-  const publicUrl = urlSlug && origin ? `${origin}/${urlSlug}` : "";
-
   return (
     <div className="space-y-8">
-      {/* Header – same pattern as Rounds */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-2xl font-bold tracking-tight">
           Tournament Settings
@@ -265,81 +219,15 @@ export default function TournamentSettingsPage(props: {
         </Button>
       </div>
 
-      {/* --- (NEW) MANAGE ADMINS CARD --- */}
       <ManageAdminsCard tournamentId={params.id} />
 
-      {/* Publish & Share card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle>Publish & Share</CardTitle>
-              <CardDescription>
-                Make this tournament viewable at a public URL.
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge
-                variant={isPublished ? "default" : "secondary"}
-                className="text-xs capitalize"
-              >
-                {isPublished ? "Published" : "Draft"}
-              </Badge>
-              <Button
-                type="button"
-                variant={isPublished ? "outline" : "default"}
-                onClick={() => handlePublishToggle(!isPublished)}
-                disabled={isPublishing}
-              >
-                {isPublishing && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                {isPublished ? "Unpublish" : "Publish"}
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {isPublished ? (
-            <>
-              <p className="text-sm text-muted-foreground">
-                This tournament is live. Share the public link below:
-              </p>
-              {urlSlug && (
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    readOnly
-                    value={publicUrl}
-                    className="font-mono text-xs"
-                  />
-                  <div className="flex gap-2 mt-2 sm:mt-0">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCopyPublicUrl}
-                    >
-                      <Copy className="mr-1 h-3 w-3" />
-                      Copy
-                    </Button>
-                    <Button asChild variant="secondary" size="sm">
-                      <Link href={`/${urlSlug}`} target="_blank">
-                        Open
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              This tournament is currently private. When you publish it, a
-              unique URL will be generated that anyone can view in read-only
-              mode.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* --- 6. RENDER THE COMPONENT --- */}
+      <PublishTournamentCard
+        tournamentId={params.id}
+        initialStatus={publishStatus}
+        initialSlug={urlSlug}
+        origin={origin}
+      />
 
       <Form {...form}>
         <form
