@@ -118,48 +118,198 @@ Your application is now running.
 
 ## Production Deployment (Self-Hosting)
 
-This project is configured for deployment on a private Linux-Server (z.B. Ubuntu) mit Nginx als Reverse Proxy.
+This project is configured for a "Zero Tech Debt" deployment on a Linux server (Ubuntu) using **`pm2`** for process management, **`nginx`** as a reverse proxy, and **`certbot`** for SSL.
 
-### 1. Erforderliche Umgebungsvariablen
+This guide assumes you are deploying as a dedicated non-root user (e.g., `tournament`) and the app is located in `/home/tournament/tournament/tournament-manager`.
 
-Für die Produktion muss eine `.env.local`-Datei auf dem Server im Projekt-Root erstellt werden:
+---
 
-```ini
-# Node-Umgebung
-NODE_ENV=production
+### 1. Environment Configuration (Critical)
 
-# Datenbank (Beispiel für MongoDB auf demselben Server)
-DATABASE_URL="mongodb://tournament_user:DEIN_PASSWORT@localhost:27017/tournament_app?authSource=admin"
+Our deployment uses a "Zero Tech Debt" two-file environment system to separate **runtime** variables from **build-time** variables.
 
-# NextAuth Konfiguration
-# Generieren Sie einen sicheren Secret mit: openssl rand -base64 32
-AUTH_SECRET="DEIN_AUTH_SECRET"
-AUTH_URL="[http://tournament.unofficialcrusaderpatch.com](http://tournament.unofficialcrusaderpatch.com)" # Ihre finale Domain
+#### A. Runtime: `ecosystem.config.js` (For PM2)
 
-# Resend (E-Mail)
-RESEND_API_KEY="re_DEIN_RESEND_KEY"
+This is the **primary source of truth** for your *running* application. `pm2` injects these variables at runtime. Create this file in your project's root (`/home/tournament/tournament/tournament-manager/ecosystem.config.js`).
+
+**CRITICAL:** Your MongoDB password **must be URL-encoded** if it contains special characters (`@`, `$`, `!`, etc.).
+* **To Encode:** `node -e 'console.log(encodeURIComponent("YOUR_PASSWORD_HERE"))'`
+* Use the **output** of this command in the `DATABASE_URL` string.
+
+```javascript:ecosystem.config.js
+module.exports = {
+  apps: [
+    {
+      name: 'tournament-app',
+      script: 'npm',
+      args: 'start',
+      // Correct CWD path
+      cwd: '/home/tournament/tournament/tournament-manager',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env: {
+        NODE_ENV: 'production',
+
+        // App port (must be unused)
+        PORT: 3001,
+
+        // --- Database (Use URL-encoded password!) ---
+        // Note: authSource MUST match the db where the user was created.
+        DATABASE_URL: 'mongodb://tournament_user:YOUR_ENCODED_PASSWORD@localhost:27017/tournament_prod?authSource=tournament_prod',
+
+        // --- Auth & URL Variables (MUST be HTTPS) ---
+        // All three are required to prevent redirect/link errors
+        NEXTAUTH_URL: 'https://tournament.unofficialcrusaderpatch.com',
+        AUTH_URL: 'https://tournament.unofficialcrusaderpatch.com',
+        NEXT_PUBLIC_SITE_URL: 'https://tournament.unofficialcrusaderpatch.com',
+
+        // --- Secrets ---
+        AUTH_SECRET: 'YOUR_AUTH_SECRET_HERE',
+        RESEND_API_KEY: 'YOUR_RESEND_KEY_HERE',
+      },
+    },
+  ],
+};
 ```
 
-### 2. Build & Start
+#### B. Build-Time: `.env.production` (For `npm run build`)
 
-1.  **Build:** Erstellt die optimierte Produktionsversion der App.
-    ```bash
-    npm run build
-    ```
+This file is used **only** by the `npm run build` command. It is required so Next.js can connect to the database and Resend client *during* the build process.
 
-2.  **Start:** Startet den Next.js-Server (standardmäßig auf Port 3000).
-    ```bash
-    npm run start
-    ```
+Create `.env.production` in the same directory. Its content must match the `ecosystem.config.js` file.
 
-Es wird dringend empfohlen, einen Prozessmanager wie `pm2` zu verwenden, um die App im Hintergrund laufen zu lassen und bei Abstürzen automatisch neu zu starten.
+```ini:.env.production
+# This file is for 'npm run build' ONLY.
+
+# Use the same encoded password and correct authSource
+DATABASE_URL="mongodb://tournament_user:YOUR_ENCODED_PASSWORD@localhost:27017/tournament_prod?authSource=tournament_prod"
+
+# All other secrets the build process needs
+AUTH_SECRET="YOUR_AUTH_SECRET_HERE"
+RESEND_API_KEY="YOUR_RESEND_KEY_HERE"
+AUTH_URL="https://tournament.unofficialcrusaderpatch.com"
+NEXT_PUBLIC_SITE_URL="https://tournament.unofficialcrusaderpatch.com"
+NEXTAUTH_URL="https://tournament.unofficialcrusaderpatch.com"
+```
+
+---
+
+### 2. Application Deployment & Maintenance (PM2)
+
+We use `pm2` to run the app as a stable, auto-restarting service.
+
+#### First-Time Setup
+```bash
+# Install dependencies
+npm install
+
+# Install pm2 globally
+sudo npm install -g pm2
+
+# Build the app
+npm run build
+
+# Start the app for the first time
+pm2 start ecosystem.config.js
+
+# Tell pm2 to auto-start on server reboots
+pm2 startup
+# (Run the command that pm2 startup gives you)
+
+# Save the process list
+pm2 save
+```
+
+#### Server Maintenance Commands
+These are the commands you will use for updates and debugging.
 
 ```bash
-# pm2 global installieren
-npm install -g pm2
+# Check status of all apps
+pm2 list
 
-# Die App mit pm2 starten
-pm2 start npm --name "tournament-app" -- start
+# Check logs for debugging (CRITICAL)
+pm2 logs tournament-app
+
+# Apply env changes (from ecosystem.config.js) or code updates (after 'git pull')
+# 'reload' is a zero-downtime restart.
+pm2 reload tournament-app
+
+# Stop the app
+pm2 stop tournament-app
+
+# Fully restart the app (if 'reload' fails)
+pm2 restart tournament-app
+```
+
+---
+
+### 3. Web Server & SSL (Nginx & Certbot)
+
+`nginx` acts as the reverse proxy, forwarding public traffic from port 443 (HTTPS) to our app on port 3001.
+
+#### Nginx Configuration
+This is the required configuration file, located at `/etc/nginx/sites-available/tournament.conf`.
+
+```nginx:/etc/nginx/sites-available/tournament.conf
+server {
+    # CRITICAL: Listen on port 80 for Certbot verification
+    listen 80;
+    server_name tournament.unofficialcrusaderpatch.com;
+
+    # This location block is required by Certbot to verify domain ownership
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # This single location block handles all app traffic by proxying to the PM2 port
+    location / {
+        # CRITICAL: Proxy to our running application on port 3001
+        proxy_pass http://localhost:3001;
+
+        # Standard proxy headers required for NextAuth (AUTH_URL fix) and general use
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Necessary headers for websocket/streaming compatibility
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_http_version 1.1;
+        proxy_cache_bypass $http_upgrade;
+        proxy_cache_revalidate on;
+        proxy_cache_min_uses 1;
+        proxy_cache off;
+    }
+}
+```
+
+#### SSL & Server Maintenance Commands
+Run these commands as `root` or with `sudo`.
+
+```bash
+# Create the Nginx config file
+sudo nano /etc/nginx/sites-available/tournament.conf
+
+# Enable the config by creating a symbolic link
+sudo ln -s /etc/nginx/sites-available/tournament.conf /etc/nginx/sites-enabled/
+
+# Test Nginx syntax (ALWAYS do this before reloading)
+sudo nginx -t
+
+# Apply Nginx config changes
+sudo systemctl reload nginx
+
+# Install Certbot (first time)
+sudo apt install certbot python3-certbot-nginx -y
+
+# Run Certbot to get SSL (first time)
+# This will auto-modify your .conf file to add HTTPS and redirects.
+sudo certbot --nginx -d tournament.unofficialcrusaderpatch.com
+
+# Test your SSL certificate renewal
+sudo certbot renew --dry-run
 ```
 
 ---
