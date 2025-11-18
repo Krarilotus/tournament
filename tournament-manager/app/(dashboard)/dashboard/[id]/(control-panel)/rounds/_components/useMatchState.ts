@@ -66,8 +66,14 @@ export function useMatchState({
   const [statsState, setStatsState] = React.useState<
     Record<string, Record<string, number>>
   >({});
+  
   const [statsCollapsed, setStatsCollapsed] = React.useState(true);
+  
+  // --- REFS ---
   const isHydrating = React.useRef(true);
+  // Track previous status to detect transitions (pending -> completed)
+  const prevStatusRef = React.useRef(match.status);
+  
   const [hasTouched, setHasTouched] = React.useState(false);
 
   React.useEffect(() => {
@@ -134,8 +140,24 @@ export function useMatchState({
 
     setFfaPlacings(nextFfaPlacings);
     setStatsState(nextStats);
+    
     const isCompleted = match.status === "completed";
-    setStatsCollapsed(!hasAnyStats || isCompleted);
+    const statusChanged = match.status !== prevStatusRef.current;
+
+    if (isHydrating.current) {
+      setStatsCollapsed(!hasAnyStats || isCompleted);
+    } else {
+      if (isCompleted) {
+        if (statusChanged || !hasAnyStats) {
+          setStatsCollapsed(true);
+        }
+      } else {
+        setStatsCollapsed(!hasAnyStats);
+      }
+    }
+    
+    prevStatusRef.current = match.status;
+
     setError(null);
     setHasTouched(false);
     isHydrating.current = false;

@@ -6,19 +6,19 @@ import { auth } from '@/lib/auth';
 import Match from '@/lib/models/Match';
 import Tournament from '@/lib/models/Tournament';
 import Round from '@/lib/models/Round';
-import { checkAdminAccess } from '@/lib/api/requestUtils'; // <-- 1. IMPORT
+import { checkAdminAccess } from '@/lib/api/requestUtils';
+// --- NEW IMPORT ---
+import { recalculateStandings } from '@/lib/standings/recalculate';
 
-// Zod schema for validating the request body
-// We expect the client to have already calculated pointsAwarded
 const participantResultSchema = z.object({
   participantId: z
     .string()
     .refine((val) => mongoose.Types.ObjectId.isValid(val), {
       message: 'Invalid Participant ID',
     }),
-  result: z.string(), // e.g., "win", "loss", "1st" or "" for "no result"
+  result: z.string(),
   pointsAwarded: z.number().default(0),
-  customStats: z.record(z.string(), z.number()).default({}), // e.g., { "Kills": 10 }
+  customStats: z.record(z.string(), z.number()).default({}),
 });
 
 const reportBodySchema = z.object({
@@ -32,18 +32,14 @@ export async function POST(
   await dbConnect();
 
   try {
-    // 1. Get Session and Params
     const session = await auth();
-    // 2. REMOVED manual session check
-
-    const params = await context.params; // Next 16/React 19 style
+    const params = await context.params;
     const { matchId } = params;
 
     if (!mongoose.Types.ObjectId.isValid(matchId)) {
       return NextResponse.json({ message: 'Invalid Match ID' }, { status: 400 });
     }
 
-    // 2. Validate Body
     const body = await req.json();
     const validation = reportBodySchema.safeParse(body);
 
@@ -56,7 +52,6 @@ export async function POST(
 
     const { participants: resultsBody } = validation.data;
 
-    // 3. Fetch Match and Verify Ownership
     const match = await Match.findById(matchId);
     if (!match) {
       return NextResponse.json({ message: 'Match not found' }, { status: 404 });
@@ -70,21 +65,16 @@ export async function POST(
       );
     }
 
-    // --- 3. REFACTORED SECURITY CHECK ---
     const accessError = checkAdminAccess(tournament, session);
     if (accessError) {
       return accessError;
     }
-    // --- END REFACTORED CHECK ---
-    // (We also removed the old manual ownerId check)
 
-    // 4. Decide status based on whether *any* participant has a non-empty result
     const anyResult = resultsBody.some(
       (r) => r.result && r.result.trim().length > 0
     );
     match.status = anyResult ? 'completed' : 'pending';
 
-    // 5. Update Match Participants
     for (const result of resultsBody) {
       const matchParticipant: any = match.participants.find(
         (p: any) => p.participantId.toString() === result.participantId
@@ -97,7 +87,6 @@ export async function POST(
       const points = result.pointsAwarded || 0;
 
       if (!trimmedResult && !hasStats && points === 0) {
-        // Treat as "clear result"
         matchParticipant.result = undefined;
         matchParticipant.pointsAwarded = 0;
         matchParticipant.customStats = new Map();
@@ -112,7 +101,6 @@ export async function POST(
 
     await match.save();
 
-    // --- 6. NEW LOGIC: Check if Round is Complete ---
     if (match.status === 'completed') {
       const pendingMatchesInRound = await Match.countDocuments({
         roundId: match.roundId,
@@ -120,27 +108,20 @@ export async function POST(
       });
 
       if (pendingMatchesInRound === 0) {
-        // All matches are done, update the round status
         await Round.findByIdAndUpdate(match.roundId, {
           status: 'completed',
         });
       }
     }
-    // --- END NEW LOGIC ---
 
-    // 7. Recalculation
-    const url = new URL(req.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
-    const recalculateUrl = `${baseUrl}/api/tournaments/${tournament.id}/recalculate`;
-    const headers = {
-      Cookie: req.headers.get('cookie') || '',
-    };
-
-    // --- MODIFICATION: We MUST await this ---
-    // This ensures the recalculation is finished before
-    // we return to the client, fixing the race condition.
-    await fetch(recalculateUrl, { method: 'POST', headers });
-    // --- END MODIFICATION ---
+    // --- 7. RECALCULATION (THE FIX) ---
+    // No more network fetch! Direct logic call.
+    try {
+      await recalculateStandings(tournament.id, tournament.settings);
+    } catch (recalcError) {
+      console.error('Recalculation failed, but match saved:', recalcError);
+      // We don't fail the request here, but we log it.
+    }
 
     return NextResponse.json(
       { message: 'Match reported successfully' },
