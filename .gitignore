@@ -36,6 +36,7 @@ tournament-manager/.env.development.local
 tournament-manager/.env.test.local
 tournament-manager/.env.production.local
 tournament-manager/.env.production
+tournament-manager/ecosystem.config.jsa
 
 # ============================
 # 🧰 TypeScript / Misc Cache
