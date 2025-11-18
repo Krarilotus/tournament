@@ -228,6 +228,19 @@ export async function POST(
   }
 }
 
+// --- LOGGING HELPER ---
+function logTypeDebug(label: string, obj: any) {
+  const type = typeof obj;
+  const isMap = obj instanceof Map;
+  const constructor = obj?.constructor?.name;
+  const isArray = Array.isArray(obj);
+  console.log(`[DEBUG] ${label}: Type=${type}, IsMap=${isMap}, Constructor=${constructor}, IsArray=${isArray}`);
+  // Only log keys to avoid flooding logs with massive objects
+  if (obj && typeof obj === 'object') {
+     console.log(`[DEBUG] ${label} Keys:`, Object.keys(obj || {}));
+  }
+}
+
 // --- Helper: derive points from config ---
 function computePointsForResult(
   tournament: any,
@@ -235,6 +248,15 @@ function computePointsForResult(
   match: IMatch,
   matchParticipant: any
 ): number {
+  // --- DEBUGGING START ---
+  // We suspect the crash happens immediately after this
+  const roundPoints = round?.pointSystem;
+  const tournPoints = tournament.settings.pointSystem;
+  
+  console.log(`--- Debugging Match ${match._id} ---`);
+  logTypeDebug("Round PointSystem", roundPoints);
+  logTypeDebug("Tournament PointSystem", tournPoints);
+
   const basePointMap: Map<string, number> =
     (round?.pointSystem as Map<string, number>) ??
     (tournament.settings.pointSystem as Map<string, number>) ??
